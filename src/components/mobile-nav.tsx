@@ -1,0 +1,132 @@
+import * as React from 'react'
+import { Link, useRouter } from '@tanstack/react-router'
+import type { LinkProps } from '@tanstack/react-router'
+import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
+
+const TOP_LEVEL_SECTIONS = [
+  { name: 'Home', href: '/' },
+  {
+    name: 'How to vote',
+    href: '/docs/how-to-vote',
+  },
+  {
+    name: 'Whatsapp Group',
+    href: '/docs/whatsapp',
+  },
+  {
+    name: 'Donations',
+    href: '/docs/mcp',
+  },
+  {
+    name: 'FAQ',
+    href: '/docs/faq',
+  },
+]
+
+export function MobileNav({ className }: { className?: string }) {
+  const [open, setOpen] = React.useState(false)
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="ghost"
+          className={cn(
+            'extend-touch-target h-8 touch-manipulation items-center justify-start gap-2.5 !p-0 hover:bg-transparent focus-visible:bg-transparent focus-visible:ring-0 active:bg-transparent dark:hover:bg-transparent',
+            className,
+          )}
+        >
+          <div className="relative flex h-8 w-4 items-center justify-center">
+            <div className="relative size-4">
+              <span
+                className={cn(
+                  'bg-foreground absolute left-0 block h-0.5 w-4 transition-all duration-100',
+                  open ? 'top-[0.4rem] -rotate-45' : 'top-1',
+                )}
+              />
+              <span
+                className={cn(
+                  'bg-foreground absolute left-0 block h-0.5 w-4 transition-all duration-100',
+                  open ? 'top-[0.4rem] rotate-45' : 'top-2.5',
+                )}
+              />
+            </div>
+            <span className="sr-only">Toggle Menu</span>
+          </div>
+          <span className="flex h-8 items-center text-lg leading-none font-medium">
+            Menu
+          </span>
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        className="bg-background/90 no-scrollbar h-(--radix-popper-available-height) w-(--radix-popper-available-width) overflow-y-auto rounded-none border-none p-0 shadow-none backdrop-blur duration-100"
+        align="start"
+        side="bottom"
+        alignOffset={-16}
+        sideOffset={14}
+      >
+        <div className="flex flex-col gap-12 overflow-auto px-6 py-6">
+          <div className="flex flex-col gap-4">
+            <div className="text-muted-foreground text-sm font-medium">
+              Menu
+            </div>
+            <div className="flex flex-col gap-3">
+              <MobileLink to="/" onOpenChange={setOpen}>
+                Home
+              </MobileLink>
+            </div>
+          </div>
+          <div className="flex flex-col gap-4">
+            <div className="text-muted-foreground text-sm font-medium">
+              Sections
+            </div>
+            <div className="flex flex-col gap-3">
+              {TOP_LEVEL_SECTIONS.map(({ name, href }) => {
+                return (
+                  <MobileLink key={name} href={href} onOpenChange={setOpen}>
+                    {name}
+                  </MobileLink>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+function MobileLink({
+  href,
+  onOpenChange,
+  className,
+  children,
+  ...props
+}: LinkProps & {
+  onOpenChange?: (open: boolean) => void
+  children: React.ReactNode
+  className?: string
+}) {
+  const router = useRouter()
+  return (
+    <Link
+      href={href}
+      onClick={() => {
+        if (href) {
+          router.navigate({ to: href.toString() })
+        }
+        onOpenChange?.(false)
+      }}
+      className={cn('text-2xl font-medium', className)}
+      {...props}
+    >
+      {children}
+    </Link>
+  )
+}
