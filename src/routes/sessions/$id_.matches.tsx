@@ -6,31 +6,14 @@ import {
   ChevronsUpDown,
   EllipsisVertical,
   ExternalLink,
+  PlusIcon,
 } from 'lucide-react'
 import { useQuery, useSuspenseQuery } from '@tanstack/react-query'
 import { z } from 'zod'
 import type { Match, Player } from '@/utils/types'
-import {
-  Field,
-  FieldContent,
-  FieldDescription,
-  FieldLabel,
-  FieldLegend,
-  FieldSeparator,
-  FieldSet,
-  FieldTitle,
-} from '@/components/ui/field'
+import { FieldLegend, FieldSet } from '@/components/ui/field'
 import { SeparatorWithTitle } from '@/components/ui/separator-title'
 import { Button } from '@/components/ui/button'
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   DropdownMenu,
@@ -38,24 +21,13 @@ import {
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuPortal,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuShortcut,
   DropdownMenuSub,
-  DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import {
-  matchQueryOptions,
-  sessionQueryOptions,
-  useVoteForSession,
-} from '@/utils/sessions'
-import { Session } from '@/utils/types'
-import { Switch } from '@/components/ui/switch'
-import { Label } from '@/components/ui/label'
+import { matchQueryOptions, sessionQueryOptions } from '@/utils/sessions'
 import {
   Collapsible,
   CollapsibleContent,
@@ -101,15 +73,6 @@ export const Route = createFileRoute('/sessions/$id_/matches')({
     }
   },
 })
-
-const currentUser: Player = {
-  id: '123456789',
-  name: 'Nadir Seghir',
-  phone: '+1234567890',
-  level: '1.54',
-  avatar:
-    'https://res.cloudinary.com/playtomic/image/upload/c_limit,w_1280/v1/pro/users/10504108/1753865118506',
-}
 
 function RouteComponent() {
   const { id } = Route.useParams()
@@ -168,12 +131,12 @@ function RouteComponent() {
             Object.entries(levels).map(([level, ms]) => (
               <div
                 key={timeSlotId + '-' + level}
-                className="flex flex-col gap-8 relative"
+                className="flex flex-col gap-4 relative"
               >
                 <SeparatorWithTitle
                   leftTitle={timeSlotId}
                   rightTitle={level}
-                  className="sticky top-0"
+                  className="sticky top-0 z-10 bg-background"
                 />
                 <div className="flex flex-col gap-4">
                   {ms.map((match) => (
@@ -210,11 +173,35 @@ function RouteComponent() {
                 Check playtomic for more details
               </DrawerDialogDescription>
             </DrawerDialogHeader>
-            <div className="p-4 flex flex-col gap-3">
-              {activeMatch?.players.map((player) => (
-                <PlayerListItem key={player.id} player={player} />
-              ))}
-            </div>
+            {activeMatch && (
+              <div className="p-4 flex flex-col gap-4">
+                {activeMatch.players.map((player) => (
+                  <PlayerListItem
+                    key={player.id}
+                    player={player}
+                    match={activeMatch}
+                  />
+                ))}
+                {activeMatch.players.length < 4 &&
+                  Array.from({
+                    length: 4 - (activeMatch?.players.length ?? 0),
+                  }).map((_, i) => (
+                    <Button
+                      key={`empty-${i}`}
+                      className="flex gap-2 items-center justify-start p-0"
+                      variant="ghost"
+                      type="button"
+                    >
+                      <div className="size-8 flex items-center justify-center rounded-full border-1 border-dashed border">
+                        <PlusIcon className="size-4 text-muted-foreground" />
+                      </div>
+                      <span className="text-muted-foreground text-sm">
+                        Click to join
+                      </span>
+                    </Button>
+                  ))}
+              </div>
+            )}
             <DrawerDialogFooter>
               <DrawerDialogClose asChild>
                 <Button variant="outline" type="button" className="w-full">
@@ -299,6 +286,22 @@ const MatchSlot = ({
                     <div className="text-sm font-medium">{player.name}</div>
                   </div>
                 ))}
+                {match.players.length < 4 &&
+                  Array.from({ length: 4 - match.players.length }).map(
+                    (_, i) => (
+                      <div
+                        key={`empty-${i}`}
+                        className="flex gap-2 items-center"
+                      >
+                        <div className="size-8 flex items-center justify-center rounded-full border-1 border-dashed border">
+                          <PlusIcon className="size-4 text-muted-foreground" />
+                        </div>
+                        <span className="text-muted-foreground text-sm">
+                          Empty
+                        </span>
+                      </div>
+                    ),
+                  )}
               </Link>
             </CollapsibleContent>
           </ItemContent>

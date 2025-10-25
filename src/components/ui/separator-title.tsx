@@ -28,7 +28,7 @@ function SeparatorWithTitle({
   // Only horizontal separator supported.
   return (
     <div
-      className={cn('relative w-full flex items-center', className)}
+      className={cn('relative w-full flex items-center h-8', className)}
       data-slot="separator-with-title"
     >
       <SeparatorPrimitive.Root

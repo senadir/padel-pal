@@ -26,15 +26,19 @@ export interface Match extends Option {
   status: 'played' | 'scheduled' | 'draft' | 'cancelled'
   players: Array<Player & { status?: 'paid' | 'pending' | 'draft' }>
 }
-export type Session = {
-  id: string
+export type SessionForm = {
   venueName: string
   venueLocation: string
   date: Date
   time: Date
   levels: Array<string>
   timeBlocks: string
-  timeSlots: Array<{ id: string; range: [Date, Date]; options: Array<Option> }>
+  timeSlots: Array<{ id: string; range: [Date, Date] }>
   limitPlayers: boolean
-  playersPerSlot: number
+  playersPerSlot?: number
+}
+
+export interface Session extends Omit<SessionForm, 'timeBlocks'> {
+  id: string
+  timeSlots: Array<{ id: string; range: [Date, Date]; options: Array<Option> }>
 }

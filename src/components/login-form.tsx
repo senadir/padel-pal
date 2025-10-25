@@ -2,12 +2,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import {
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
-} from '@/components/ui/field'
+import { Field, FieldDescription, FieldGroup } from '@/components/ui/field'
 import { InputPhoneNumber } from '@/components/ui/input-phone-number'
 
 export function LoginForm({
@@ -16,7 +11,6 @@ export function LoginForm({
   ...props
 }: React.ComponentProps<'div'> & { phone?: string }) {
   const [phone, setPhone] = useState(initialPhone)
-  const navigate = useNavigate()
 
   return (
     <div className={cn('flex flex-col gap-6', className)} {...props}>
@@ -56,19 +50,11 @@ export function LoginForm({
               onChange={(value) => {
                 setPhone(value)
               }}
+              required
             />
           </Field>
           <Field>
-            <Button
-              type="submit"
-              size="lg"
-              onClick={() => {
-                navigate({
-                  to: '/login',
-                  search: { step: 'otp', phone },
-                })
-              }}
-            >
+            <Button type="submit" size="lg" disabled={!phone}>
               Continue
             </Button>
           </Field>

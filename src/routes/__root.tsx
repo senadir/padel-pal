@@ -11,6 +11,7 @@ import type { QueryClient } from '@tanstack/react-query'
 import { getThemeServerFn } from '@/lib/theme'
 import { ThemeProvider } from '@/components/theme-provider'
 import { Header } from '@/components/header'
+import { Toaster } from '@/components/ui/sonner'
 
 interface MyRouterContext {
   queryClient: QueryClient
@@ -36,6 +37,19 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
         rel: 'stylesheet',
         href: appCss,
       },
+      {
+        rel: 'preconnect',
+        href: 'https://fonts.googleapis.com',
+      },
+      {
+        rel: 'preconnect',
+        href: 'https://fonts.gstatic.com',
+        crossOrigin: 'anonymous',
+      },
+      {
+        rel: 'stylesheet',
+        href: 'https://fonts.googleapis.com/css2?family=Onest:wght@100..900&display=swap',
+      },
     ],
   }),
 
@@ -58,6 +72,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
           </div>
 
           <Scripts />
+          <Toaster />
         </body>
       </html>
     </ThemeProvider>

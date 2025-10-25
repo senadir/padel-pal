@@ -21,18 +21,12 @@ export function OTPForm({
 }: React.ComponentProps<'div'> & { phone?: string }) {
   const [otp, setOtp] = useState('')
   const verifyButtonRef = useRef<HTMLButtonElement>(null)
+
   useEffect(() => {
     if (otp.length === 6) {
-      console.log('focusing')
-      console.log(verifyButtonRef.current)
       verifyButtonRef.current?.focus()
-      verifyOtp(otp)
     }
   }, [otp])
-
-  const verifyOtp = (otp: string) => {
-    console.log(otp)
-  }
 
   return (
     <div className={cn('flex flex-col gap-6', className)} {...props}>
@@ -96,7 +90,6 @@ export function OTPForm({
               type="submit"
               size="lg"
               disabled={otp.length !== 6}
-              onClick={() => verifyOtp(otp)}
               ref={verifyButtonRef}
             >
               Verify

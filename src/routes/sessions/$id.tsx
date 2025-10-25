@@ -18,14 +18,6 @@ import {
 import { SeparatorWithTitle } from '@/components/ui/separator-title'
 import { Button } from '@/components/ui/button'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   DropdownMenu,
@@ -128,7 +120,6 @@ function RouteComponent() {
       navigate({ to: '.' })
     }
   }
-  console.log(activeOption, slotDrawerOpen)
 
   return (
     <form className="flex flex-col gap-6">
