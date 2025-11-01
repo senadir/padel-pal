@@ -1,20 +1,48 @@
 import { useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
+import { useMutation } from '@tanstack/react-query'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Field, FieldDescription, FieldGroup } from '@/components/ui/field'
 import { InputPhoneNumber } from '@/components/ui/input-phone-number'
+import { signInWithPhone as serverSignInWithPhone } from '@/utils/auth'
+import { toast } from 'sonner'
+import { useServerFn } from '@tanstack/react-start'
 
 export function LoginForm({
-  phone: initialPhone,
   className,
   ...props
-}: React.ComponentProps<'div'> & { phone?: string }) {
-  const [phone, setPhone] = useState(initialPhone)
+}: React.ComponentProps<'div'>) {
+  const [phone, setPhone] = useState('')
+  const signInWithPhone = useServerFn(serverSignInWithPhone)
+  const navigate = useNavigate()
+
+  const signInMutation = useMutation({
+    mutationFn: signInWithPhone,
+    onSuccess: () => {
+      navigate({
+        to: '/login/otp',
+        state: { phone },
+      })
+    },
+    onError: (error) => {
+      console.error('Sign in error:', error)
+      toast.error('Failed to send OTP', {
+        description: error.message,
+      })
+    },
+  })
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (phone) {
+      signInMutation.mutate({ data: { phone } })
+    }
+  }
 
   return (
     <div className={cn('flex flex-col gap-6', className)} {...props}>
-      <form>
+      <form onSubmit={handleSubmit}>
         <FieldGroup>
           <div className="flex flex-col items-center gap-2 text-center">
             <a
@@ -44,7 +72,6 @@ export function LoginForm({
           <Field>
             <InputPhoneNumber
               id="phone"
-              placeholder="+34 600 00 00 00"
               className="w-full h-12"
               value={phone}
               onChange={(value) => {
@@ -54,8 +81,12 @@ export function LoginForm({
             />
           </Field>
           <Field>
-            <Button type="submit" size="lg" disabled={!phone}>
-              Continue
+            <Button
+              type="submit"
+              size="lg"
+              disabled={!phone || signInMutation.isPending}
+            >
+              {signInMutation.isPending ? 'Sending...' : 'Continue'}
             </Button>
           </Field>
         </FieldGroup>

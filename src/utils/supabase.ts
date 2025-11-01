@@ -7,7 +7,7 @@ import { SupabaseClient } from '@supabase/supabase-js'
 export function getSupabaseServerClient(): SupabaseClient<Database> {
   return createServerClient(
     process.env.VITE_SUPABASE_URL!,
-    process.env.VITE_SUPABASE_PUBLIC_KEY!,
+    process.env.VITE_SUPABASE_PRIVATE_KEY!,
     {
       cookies: {
         getAll() {

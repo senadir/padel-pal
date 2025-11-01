@@ -1,4 +1,3 @@
-import { useRouter } from '@tanstack/react-router'
 import { createContext, use } from 'react'
 import type { PropsWithChildren } from 'react'
 import type { T as Theme } from '@/lib/theme'
@@ -10,10 +9,13 @@ type Props = PropsWithChildren<{ theme: Theme }>
 const ThemeContext = createContext<ThemeContextVal | null>(null)
 
 export function ThemeProvider({ children, theme }: Props) {
-  const router = useRouter()
-
   function setTheme(val: Theme) {
-    setThemeServerFn({ data: val }).then(() => router.invalidate())
+    setThemeServerFn({ data: val }).then(() => {
+      // Reload the page to apply the theme change
+      if (typeof window !== 'undefined') {
+        window.location.reload()
+      }
+    })
   }
 
   return <ThemeContext value={{ theme, setTheme }}>{children}</ThemeContext>

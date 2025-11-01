@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { Link, useRouter } from '@tanstack/react-router'
+import { Link } from '@tanstack/react-router'
 import type { LinkProps } from '@tanstack/react-router'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -113,14 +113,10 @@ function MobileLink({
   children: React.ReactNode
   className?: string
 }) {
-  const router = useRouter()
   return (
     <Link
       href={href}
       onClick={() => {
-        if (href) {
-          router.navigate({ to: href.toString() })
-        }
         onOpenChange?.(false)
       }}
       className={cn('text-2xl font-medium', className)}

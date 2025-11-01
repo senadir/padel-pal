@@ -112,12 +112,6 @@ export const useVoteForSession = ({
       timeSlot: string
       level: string
     }): Promise<Session> => {
-      // TODO: Implement actual voting logic using variables.timeSlot and variables.level
-      console.log('Voting for session:', {
-        sessionId,
-        timeSlot: variables.timeSlot,
-        level: variables.level,
-      })
       return Promise.resolve(getMockSession())
     },
     onError: (error) => {
@@ -220,8 +214,6 @@ export const createSessionValidator: z.ZodType<SessionForm> = z.object({
 export const createSession = createServerFn({ method: 'POST' })
   .inputValidator(zodValidator(createSessionValidator))
   .handler(async ({ data }: { data: SessionForm }): Promise<string> => {
-    console.log('Creating session:', data)
-
     try {
       const supabase = getSupabaseServerClient()
 

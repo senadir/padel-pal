@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+import { useNavigate, useLocation } from '@tanstack/react-router'
+import { useMutation } from '@tanstack/react-query'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import {
@@ -13,14 +15,41 @@ import {
   InputOTPSeparator,
   InputOTPSlot,
 } from '@/components/ui/input-otp'
+import { verifyOtp } from '@/utils/auth'
+import { toast } from 'sonner'
 
-export function OTPForm({
-  phone,
-  className,
-  ...props
-}: React.ComponentProps<'div'> & { phone?: string }) {
+export function OTPForm({ className, ...props }: React.ComponentProps<'div'>) {
   const [otp, setOtp] = useState('')
   const verifyButtonRef = useRef<HTMLButtonElement>(null)
+  const navigate = useNavigate()
+  const location = useLocation()
+  const phone = (location.state as { phone?: string })?.phone
+
+  const verifyOtpMutation = useMutation({
+    mutationFn: verifyOtp,
+    onSuccess: (player) => {
+      toast.success('Phone number verified successfully!')
+      // Redirect based on whether player has playtomic_id
+      if (player?.playtomic_id) {
+        navigate({ to: '/' })
+      } else {
+        navigate({ to: '/login/playtomic' })
+      }
+    },
+    onError: (error) => {
+      console.error('OTP verification error:', error)
+      toast.error('Invalid verification code', {
+        description: 'Please check your code and try again.',
+      })
+    },
+  })
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (otp.length === 6 && phone) {
+      verifyOtpMutation.mutate({ data: { token: otp, phone } })
+    }
+  }
 
   useEffect(() => {
     if (otp.length === 6) {
@@ -28,9 +57,15 @@ export function OTPForm({
     }
   }, [otp])
 
+  useEffect(() => {
+    if (!phone) {
+      navigate({ to: '/login' })
+    }
+  }, [phone, navigate])
+
   return (
     <div className={cn('flex flex-col gap-6', className)} {...props}>
-      <form>
+      <form onSubmit={handleSubmit}>
         <FieldGroup>
           <div className="flex flex-col items-center gap-2 text-center">
             <a
@@ -54,7 +89,7 @@ export function OTPForm({
             </a>
             <h1 className="text-xl font-bold">Enter verification code</h1>
             <FieldDescription>
-              We sent a 6-digit code to your whatsapp number {phone}
+              We sent a 6-digit code to your whatsapp number
             </FieldDescription>
           </div>
           <Field>
@@ -89,10 +124,10 @@ export function OTPForm({
             <Button
               type="submit"
               size="lg"
-              disabled={otp.length !== 6}
+              disabled={otp.length !== 6 || !phone || verifyOtpMutation.isPending}
               ref={verifyButtonRef}
             >
-              Verify
+              {verifyOtpMutation.isPending ? 'Verifying...' : 'Verify'}
             </Button>
           </Field>
         </FieldGroup>

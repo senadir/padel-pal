@@ -1,11 +1,6 @@
-export type Player = {
-  id: string
-  name: string
-  phone: string
-  level: string
-  avatar: string
-  playtomicId?: string
-}
+import { Database } from './database.types'
+
+export type Player = Database['public']['Tables']['players']['Row']
 
 export type Option = {
   id: string
@@ -41,4 +36,22 @@ export type SessionForm = {
 export interface Session extends Omit<SessionForm, 'timeBlocks'> {
   id: string
   timeSlots: Array<{ id: string; range: [Date, Date]; options: Array<Option> }>
+}
+
+export interface PlaytomicProfile {
+  user_id: string
+  full_name: string
+  picture: string
+  is_validated: boolean
+  is_email_verified: boolean
+  is_phone_verified: boolean
+  bio: string
+  communications_language: string
+  country_code: string
+  email: string | null
+  phone: string | null
+  facebook_id: string | null
+  privacy_profile: 'PUBLIC' | 'PRIVATE' | 'FRIENDS_ONLY'
+  is_premium: boolean
+  tenant_tags: string[]
 }
