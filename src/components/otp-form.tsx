@@ -52,7 +52,6 @@ export function OTPForm({ redirect, className, ...props }: OTPFormProps) {
           : '/login/playtomic'
         window.location.href = playtomicUrl
       }
-
     },
     onError: (error) => {
       console.error('OTP verification error:', error)

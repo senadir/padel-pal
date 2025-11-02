@@ -43,6 +43,7 @@ const defaultSession: SessionForm = {
     date.setHours(16, 0, 0, 0)
     return date
   })(),
+  votingClosesAt: undefined,
   levels: ['beginner', 'improver', 'intermediate'],
   timeBlocks: '60',
   timeSlots: [
@@ -70,7 +71,6 @@ const defaultSession: SessionForm = {
   ],
   limitPlayers: false,
   playersPerSlot: 4,
-  votingClosesAt: undefined,
 }
 
 export const Route = createFileRoute('/sessions/new')({

@@ -18,31 +18,37 @@ Unlike storing roles directly on the `players` table, this implementation follow
 ## What's Already Done
 
 ✅ **Database schema created**:
+
 - `app_role` enum type with `'player'` and `'organizer'` values
 - `user_roles` table to track user-role mappings
 - RLS policies on `user_roles` table
 
 ✅ **JWT hook function created** (`custom_access_token_hook`):
+
 - Queries `user_roles` table for the user's role
 - Selects highest privilege role (organizer > player)
 - Adds `user_role` claim to JWT tokens
 - Has proper permissions granted to `supabase_auth_admin`
 
 ✅ **RLS policies updated**:
+
 - All organizer policies now check `(auth.jwt() ->> 'user_role')::public.app_role = 'organizer'`
 - Policies updated on: `sessions`, `matches`, `match_participants`, `session_votes`, `games`
 
 ✅ **TypeScript types updated**:
+
 - Database types regenerated with `app_role` enum and `user_roles` table
 - Application types updated to use `AppRole` type
 - Auth context updated to include role
 
 ✅ **Application code updated**:
+
 - `fetchUser()` queries `user_roles` table for user's role
 - `useRole()` hook returns current user's role
 - `useIsOrganizer()` hook for boolean checks
 
 ✅ **Your user configured**:
+
 - User ID `7ff45b50-7f49-4b3f-b4c4-9287cfd9b7c9` has both `'player'` and `'organizer'` roles
 
 ## What You Need to Do
@@ -88,6 +94,7 @@ After registering the hook, verify that JWT tokens include the `user_role` claim
    - OTP: 000000
 
 2. **Check role in application**:
+
    ```typescript
    import { useRole, useIsOrganizer } from '@/contexts/auth'
 
@@ -187,6 +194,7 @@ CREATE POLICY "sessions_organizer_insert" ON sessions
 ```
 
 The key part: `(auth.jwt() ->> 'user_role')::public.app_role = 'organizer'`
+
 - `auth.jwt()` returns the JWT token as JSONB
 - `->> 'user_role'` extracts the user_role claim as text
 - `::public.app_role` casts it to the enum type
@@ -208,9 +216,10 @@ export const fetchUser = createServerFn({ method: 'GET' }).handler(async () => {
     .select('role')
     .eq('user_id', data.user.id)
 
-  const role = userRoles?.find((r) => r.role === 'organizer')?.role
-    || userRoles?.[0]?.role
-    || 'player'
+  const role =
+    userRoles?.find((r) => r.role === 'organizer')?.role ||
+    userRoles?.[0]?.role ||
+    'player'
 
   return { user, player, isPhoneVerified, hasPlaytomicProfile, role }
 })
@@ -227,6 +236,7 @@ function MyComponent() {
 ## Role Permissions
 
 ### Player Role (default)
+
 - View all sessions and matches
 - Vote on session time slots
 - Join/leave matches
@@ -234,6 +244,7 @@ function MyComponent() {
 - Delete own votes
 
 ### Organizer Role (all player permissions plus)
+
 - Create/edit/delete sessions
 - Create/edit/delete matches
 - Add/remove any player from matches
@@ -257,6 +268,7 @@ The user will receive the new role in their JWT on the next token refresh (or si
 ## Troubleshooting
 
 ### Hook not appearing in dashboard
+
 - Ensure you're looking at the correct project
 - Check that the function exists:
   ```sql
@@ -270,6 +282,7 @@ The user will receive the new role in their JWT on the next token refresh (or si
   ```
 
 ### Role not appearing in JWT
+
 - Ensure the hook is **enabled** in the dashboard (not just created)
 - Sign out and sign back in to get a fresh token
 - Check that user has a role assigned:
@@ -279,6 +292,7 @@ The user will receive the new role in their JWT on the next token refresh (or si
 - Inspect the JWT token at https://jwt.io - look for `user_role` claim
 
 ### Permission denied errors
+
 - Verify the user's role:
   ```sql
   SELECT role FROM public.user_roles WHERE user_id = auth.uid();
@@ -297,10 +311,12 @@ The user will receive the new role in their JWT on the next token refresh (or si
   ```
 
 ### "User not found in user_roles" errors
+
 - New users need to be added to `user_roles` table
 - By default, users should get the `'player'` role
 - The hook defaults to `'player'` if no role found
 - Consider creating a trigger to auto-assign `'player'` role on user creation:
+
   ```sql
   CREATE OR REPLACE FUNCTION public.handle_new_user()
   RETURNS TRIGGER AS $$
