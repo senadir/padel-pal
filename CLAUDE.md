@@ -84,10 +84,93 @@ Multi-step authentication using Supabase phone OTP via WhatsApp:
 
 - **Client**: Server-side only using `@supabase/ssr` with cookie-based sessions
 - **Auth**: Phone OTP via WhatsApp channel
-- **Database**: PostgreSQL with `players` table (schema types in `src/utils/database.types.ts`)
+- **Database**: PostgreSQL (schema types in `src/utils/database.types.ts`)
 - **Environment variables**:
   - `VITE_SUPABASE_URL`
   - `VITE_SUPABASE_PUBLIC_KEY`
+
+#### Database Schema
+
+**Core Tables:**
+
+1. **`players`** - User profiles linked to Supabase auth
+   - `id` (UUID, PK): Matches Supabase auth.users.id
+   - `name` (TEXT): Player's full name (from Playtomic)
+   - `avatar` (TEXT): Profile picture URL (from Playtomic)
+   - `phone` (TEXT): Phone number in E.164 format
+   - `playtomic_id` (BIGINT): Playtomic user ID for API integration
+   - `level` (INT): Skill level (1-10 scale)
+   - `status` (TEXT): Player status
+   - `created_at` (TIMESTAMPTZ): Record creation timestamp
+
+2. **`sessions`** - Padel session events
+   - `id` (BIGSERIAL, PK): Internal session ID
+   - `public_id` (TEXT, UNIQUE): Public-facing ID (e.g., "JDBU83MQ")
+   - `date` (DATE): Session date
+   - `venue_name` (TEXT): Venue name
+   - `venue_location` (TEXT): Venue location/address
+   - `levels` (TEXT[]): Available skill levels for this session
+   - `time_slots` (JSONB): Array of time slot configurations
+   - `players_per_slot` (INT): Max players per time slot
+   - `limit_players` (BOOLEAN): Whether to enforce player limits
+   - `time_blocks` (INT): Number of time blocks
+   - `created_at` (TIMESTAMPTZ): Record creation timestamp
+
+3. **`session_votes`** - Player votes for session time slots
+   - `id` (BIGSERIAL, PK): Vote ID
+   - `player_id` (UUID, FK → players): Player who voted
+   - `session_id` (BIGINT, FK → sessions): Target session
+   - `option_id` (TEXT): ID of the time slot option voted for
+   - `voted_at` (TIMESTAMPTZ): When the vote was cast
+   - `created_at` (TIMESTAMPTZ): Record creation timestamp
+   - **Constraint**: UNIQUE(player_id, session_id, option_id)
+
+4. **`matches`** - Generated matches from session votes
+   - `id` (BIGSERIAL, PK): Internal match ID
+   - `public_id` (TEXT, UNIQUE): Public-facing match ID
+   - `session_id` (BIGINT, FK → sessions): Parent session
+   - `time_slot_id` (TEXT): Time slot identifier
+   - `level` (TEXT): Skill level for this match
+   - `start_time` (TIMESTAMPTZ): Match start time
+   - `end_time` (TIMESTAMPTZ): Match end time
+   - `max_players` (INT, DEFAULT 4): Maximum players per match
+   - `created_at` (TIMESTAMPTZ): Record creation timestamp
+   - `updated_at` (TIMESTAMPTZ): Last update timestamp
+
+5. **`match_participants`** - Players in matches
+   - `id` (BIGSERIAL, PK): Participant ID
+   - `match_id` (BIGINT, FK → matches): Target match
+   - `player_id` (UUID, FK → players): Player participating
+   - `source` (TEXT, DEFAULT 'manual'): How player joined ('vote' or 'manual')
+   - `joined_at` (TIMESTAMPTZ): When player joined
+   - `created_at` (TIMESTAMPTZ): Record creation timestamp
+   - **Constraint**: UNIQUE(match_id, player_id)
+   - **Trigger**: Validates no time overlap for same player
+
+6. **`games`** (Legacy) - Older game tracking table
+   - `id` (BIGSERIAL, PK): Game ID
+   - `session_id` (BIGINT, FK → sessions): Parent session
+   - `playtomic_id` (TEXT): Playtomic booking ID
+   - `level` (TEXT): Skill level
+   - `starting_time` (TIMESTAMPTZ): Game start time
+   - `status` (TEXT): Game status
+   - `players` (JSONB[]): Array of player objects
+   - `created_at` (TIMESTAMPTZ): Record creation timestamp
+
+**Row Level Security (RLS) Policies:**
+
+- **`players` table**:
+  - SELECT: Allowed for all users (authenticated and anonymous) - sessions are publicly viewable
+  - INSERT/UPDATE/DELETE: Restricted to own records only (auth.uid() = id)
+
+- **Other tables**: Follow similar patterns with appropriate read/write restrictions
+
+**Important Notes:**
+
+1. **Public Session Access**: Sessions and player profiles are publicly viewable without authentication to allow users to browse before signing up
+2. **Time Overlap Prevention**: PostgreSQL trigger on `match_participants` prevents double-booking players in overlapping time slots
+3. **Hybrid Match Generation**: Matches are created from votes, then manual joins are allowed for remaining slots
+4. **UUID vs BIGINT**: `players.id` uses UUID to match Supabase auth, other IDs use BIGSERIAL for efficiency
 
 ### UI Components
 

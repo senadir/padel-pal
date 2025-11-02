@@ -9,10 +9,18 @@ import { signInWithPhone as serverSignInWithPhone } from '@/utils/auth'
 import { toast } from 'sonner'
 import { useServerFn } from '@tanstack/react-start'
 
+// CHANGE: Added redirect prop to support return-to-origin flow
+// The redirect URL is passed through the entire auth flow so users
+// return to where they came from after completing authentication
+type LoginFormProps = React.ComponentProps<'div'> & {
+  redirect?: string
+}
+
 export function LoginForm({
+  redirect,
   className,
   ...props
-}: React.ComponentProps<'div'>) {
+}: LoginFormProps) {
   const [phone, setPhone] = useState('')
   const signInWithPhone = useServerFn(serverSignInWithPhone)
   const navigate = useNavigate()
@@ -20,9 +28,12 @@ export function LoginForm({
   const signInMutation = useMutation({
     mutationFn: signInWithPhone,
     onSuccess: () => {
+      // CHANGE: Pass redirect parameter to OTP page via search params
+      // Also pass phone via state for OTP verification
       navigate({
         to: '/login/otp',
         state: { phone },
+        search: redirect ? { redirect } : undefined,
       })
     },
     onError: (error) => {

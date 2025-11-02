@@ -36,6 +36,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { fetchSession, useVoteForSession } from '@/utils/sessions'
+import { useAuth } from '@/contexts/auth'
 import {
   DrawerDialog,
   DrawerDialogClose,
@@ -69,15 +70,6 @@ export const Route = createFileRoute('/sessions/$id')({
   }),
 })
 
-const currentUser: Player = {
-  id: '123456789',
-  name: 'Nadir Seghir',
-  phone: '+1234567890',
-  level: '1.54',
-  avatar:
-    'https://res.cloudinary.com/playtomic/image/upload/c_limit,w_1280/v1/pro/users/10504108/1753865118506',
-}
-
 export const sessionQueryOptions = (sessionId: string) =>
   queryOptions({
     queryKey: ['session', sessionId],
@@ -88,8 +80,55 @@ function RouteComponent() {
   const { id } = Route.useParams()
   const { slot } = Route.useSearch()
   const { data: session } = useSuspenseQuery(sessionQueryOptions(id))
-  const { voteForSession } = useVoteForSession({ sessionId: id, currentUser })
+  const { authData } = useAuth()
   const navigate = useNavigate({ from: Route.fullPath })
+
+  // Check if user is fully authenticated
+  const currentUser = authData?.player
+  const isFullyAuthenticated = !!(
+    authData?.user &&
+    authData.isPhoneVerified &&
+    authData.hasPlaytomicProfile
+  )
+
+  // Create a no-op user for unauthenticated state
+  const userForVoting = currentUser || {
+    id: '',
+    name: null,
+    phone: null,
+    level: null,
+    avatar: null,
+    playtomic_id: null,
+    status: null,
+    created_at: '',
+  }
+
+  const { voteForSession: voteForSessionFn } = useVoteForSession({
+    sessionId: id,
+    currentUser: userForVoting,
+  })
+
+  // CHANGE: Wrap voting function to check authentication before allowing vote
+  // This enables public viewing of sessions while requiring auth for interactions
+  const voteForSession = (variables: any) => {
+    if (!isFullyAuthenticated) {
+      // Store return URL for after login - user will come back here after auth
+      const returnUrl = `/sessions/${id}`
+
+      // Redirect to appropriate login step based on auth state
+      // The redirect parameter will be propagated through the entire auth flow
+      if (!authData?.user) {
+        navigate({ to: '/login', search: { redirect: returnUrl } })
+      } else if (!authData.isPhoneVerified) {
+        navigate({ to: '/login/otp', search: { redirect: returnUrl } })
+      } else if (!authData.hasPlaytomicProfile) {
+        navigate({ to: '/login/playtomic', search: { redirect: returnUrl } })
+      }
+      return
+    }
+    // User is fully authenticated, proceed with voting
+    voteForSessionFn(variables)
+  }
   const generatedGamesCount = useMemo(() => {
     return session.timeSlots.reduce((acc, timeSlot) => {
       return (
@@ -136,6 +175,8 @@ function RouteComponent() {
           <TimeSlot
             key={timeSlot.id}
             timeSlot={timeSlot}
+            session={session}
+            currentUser={userForVoting}
             voteForSession={voteForSession}
           />
         ))}
@@ -183,10 +224,18 @@ function RouteComponent() {
 
 const TimeSlot = ({
   timeSlot,
+  session,
+  currentUser,
   voteForSession,
 }: {
   timeSlot: Session['timeSlots'][number]
-  voteForSession: (v: { timeSlot: string; level: string }) => void
+  session: Session
+  currentUser: Player
+  voteForSession: (v: {
+    timeSlot: string
+    level: string
+    session: Session
+  }) => void
 }) => {
   return (
     <div className="w-full" key={timeSlot.id}>
@@ -210,7 +259,7 @@ const TimeSlot = ({
               orientation="horizontal"
               value={selectedLevel}
               onValueChange={(value) => {
-                voteForSession({ timeSlot: timeSlot.id, level: value })
+                voteForSession({ timeSlot: timeSlot.id, level: value, session })
               }}
             >
               {timeSlot.options.map((option: Option) => (
@@ -218,6 +267,7 @@ const TimeSlot = ({
                   key={option.id}
                   option={option}
                   selectedLevel={selectedLevel}
+                  session={session}
                   clearVoteForTimeSlot={voteForSession}
                 />
               ))}
@@ -232,11 +282,17 @@ const TimeSlot = ({
 const GameSlot = ({
   option,
   selectedLevel,
+  session,
   clearVoteForTimeSlot,
 }: {
   option: Option
   selectedLevel: string
-  clearVoteForTimeSlot: (variables: { timeSlot: string; level: string }) => void
+  session: Session
+  clearVoteForTimeSlot: (variables: {
+    timeSlot: string
+    level: string
+    session: Session
+  }) => void
 }) => {
   return (
     <FieldLabel htmlFor={option.id} className="shrink-0">
@@ -256,7 +312,7 @@ const GameSlot = ({
                   <Avatar key={player.id} className="size-5">
                     <AvatarImage src={player.avatar} alt={player.name} />
                     <AvatarFallback delayMs={700}>
-                      {player.name.charAt(0)}
+                      {player.name?.charAt(0) || '?'}
                     </AvatarFallback>
                   </Avatar>
                 ))}
@@ -277,6 +333,7 @@ const GameSlot = ({
               clearVoteForTimeSlot({
                 timeSlot: option.slot.id,
                 level: option.level,
+                session,
               })
             }
           }}
@@ -317,7 +374,9 @@ const PlayerListItem = ({
     <div className="flex items-center gap-3">
       <Avatar className="size-8">
         <AvatarImage src={player.avatar} alt={player.name} />
-        <AvatarFallback delayMs={700}>{player.name.charAt(0)}</AvatarFallback>
+        <AvatarFallback delayMs={700}>
+          {player.name?.charAt(0) || '?'}
+        </AvatarFallback>
       </Avatar>
       <div className="min-w-0 flex-1">
         <div className="truncate font-medium">{player.name}</div>
@@ -424,6 +483,7 @@ const PlayerOptionDialog = ({
                         voteForSession({
                           timeSlot: timeSlot.id,
                           level: option.level,
+                          session,
                         })
                       }
                     }}

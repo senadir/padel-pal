@@ -507,7 +507,6 @@ function NewSession() {
         </form.Field>
         <form.Subscribe
           selector={(state) => {
-            console.log('Submitting:', state.isSubmitting)
             return { isSubmitting: state.isSubmitting }
           }}
           children={({ isSubmitting }) => (

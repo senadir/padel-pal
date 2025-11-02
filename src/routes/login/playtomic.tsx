@@ -11,6 +11,7 @@ export const Route = createFileRoute('/login/playtomic')({
   component: RouteComponent,
   validateSearch: z.object({
     email: z.string().optional(),
+    redirect: z.string().optional(),
   }),
   beforeLoad: async ({ context }) => {
     const { authData } = context
@@ -73,11 +74,16 @@ export const Route = createFileRoute('/login/playtomic')({
 
 function RouteComponent() {
   const { playtomicProfile, searchMethod } = useLoaderData({ from: '/login/playtomic' })
+  const { redirect } = Route.useSearch()
 
   return (
     <div className="bg-background flex min-h-svh flex-col items-center justify-center gap-6 p-6 md:p-10">
       <div className="w-full max-w-sm">
-        <PlaytomicForm playtomicProfile={playtomicProfile} searchMethod={searchMethod} />
+        <PlaytomicForm
+          playtomicProfile={playtomicProfile}
+          searchMethod={searchMethod}
+          redirect={redirect}
+        />
       </div>
     </div>
   )

@@ -112,18 +112,28 @@ export const verifyOtp = createServerFn({ method: 'POST' })
     // Ensure phone is in E.164 format with + prefix
     const phone = data.phone.startsWith('+') ? data.phone : `+${data.phone}`
 
+    // CHANGE: Use upsert instead of insert to handle both new and returning users
+    // This prevents "duplicate key" errors when existing users log in again
+    // The upsert will create a new record for first-time users, or update the phone
+    // for existing users (in case they changed their number)
     const { data: player, error: playerError } = await supabase
       .from('players')
-      .insert({
-        id: response.user.id,
-        phone: phone,
-      })
+      .upsert(
+        {
+          id: response.user.id,
+          phone: phone,
+        },
+        {
+          onConflict: 'id', // Conflict on primary key (user ID)
+          ignoreDuplicates: false, // Update the record if it exists
+        },
+      )
       .select()
       .single()
 
     if (playerError) {
-      console.error('Error creating player in verifyOtp:', playerError)
-      throw new Error('Failed to create player profile')
+      console.error('Error upserting player in verifyOtp:', playerError)
+      throw new Error('Failed to create or update player profile')
     }
 
     return player
