@@ -182,6 +182,17 @@ export const linkPlaytomicProfile = createServerFn({ method: 'POST' })
     return player
   })
 
+export const logout = createServerFn({ method: 'POST' }).handler(async () => {
+  const supabase = getSupabaseServerClient()
+  const { error } = await supabase.auth.signOut()
+
+  if (error) {
+    throw new Error(error.message)
+  }
+
+  return { success: true }
+})
+
 // Utility function to determine redirect path based on user status
 export function getLoginRedirectPath(authData: any): string | null {
   if (!authData) {

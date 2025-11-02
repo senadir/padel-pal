@@ -9,10 +9,17 @@ import { zodValidator } from '@tanstack/zod-adapter'
 import { z } from 'zod'
 import { toast } from 'sonner'
 import ShortUniqueId from 'short-unique-id'
-import { formatISO, setHours, setMinutes, getMinutes, getHours } from 'date-fns'
+import {
+  formatISO,
+  setHours,
+  setMinutes,
+  getMinutes,
+  getHours,
+  format,
+} from 'date-fns'
 import { getMockSession } from './mock'
 import { getSupabaseServerClient } from './supabase'
-import type { Player, Session, SessionForm } from './types'
+import type { Match, Player, Session, SessionForm } from './types'
 
 export const fetchSessions = createServerFn({ method: 'GET' }).handler(
   async () => {
@@ -103,7 +110,6 @@ export const fetchSession = createServerFn({ method: 'GET' })
         date: sessionDate,
         time: sessionDate, // Use the same date for time since date contains the full datetime
         levels: sessionRow.levels || [],
-        timeBlocks: sessionRow.time_blocks?.toString() || '60',
         timeSlots,
         limitPlayers: sessionRow.limit_players || false,
         playersPerSlot: sessionRow.players_per_slot || undefined,
@@ -602,6 +608,14 @@ export const useVoteForSession = ({
         sessionId,
       ])
 
+      // Check if this is a vote or unvote
+      const slot = variables.session.timeSlots.find(
+        (ts) => ts.id === variables.timeSlot,
+      )
+      const option = slot?.options.find((o) => o.level === variables.level)
+      const isUnvoting =
+        option?.players.some((player) => player.id === currentUser.id) ?? false
+
       // Optimistically update to the new value
       queryClient.setQueryData<Session>(['session', sessionId], (old) => {
         if (!old) return old
@@ -662,8 +676,8 @@ export const useVoteForSession = ({
         }
       })
 
-      // Return context with the snapshot
-      return { previousSession }
+      // Return context with the snapshot and whether this is unvoting
+      return { previousSession, isUnvoting }
     },
     onError: (error, _variables, context) => {
       // Rollback to previous value on error
@@ -681,8 +695,21 @@ export const useVoteForSession = ({
         description: errorMessage,
       })
     },
-    onSuccess: () => {
-      toast.success('Vote recorded successfully!')
+    onSuccess: (_data, variables, context) => {
+      // Find the time slot to get the start time
+      const slot = variables.session.timeSlots.find(
+        (ts) => ts.id === variables.timeSlot,
+      )
+      const timeSlotStart = slot?.range[0] ? format(slot.range[0], 'HH:mm') : ''
+      const level = variables.level.toLowerCase()
+
+      if (context?.isUnvoting) {
+        toast.success(
+          `You removed your vote from the ${timeSlotStart} ${level} slot`,
+        )
+      } else {
+        toast.success(`You voted for the ${timeSlotStart} ${level} slot`)
+      }
     },
     // Always refetch after error or success to sync with server
     onSettled: () => {
@@ -720,8 +747,20 @@ export const useMatchActions = ({
         description: errorMessage,
       })
     },
-    onSuccess: () => {
-      toast.success('Successfully joined match!')
+    onSuccess: (_data, matchPublicId) => {
+      // Get match data from query cache
+      const matches = queryClient.getQueryData<Match[]>(['matches', sessionId])
+      const match = matches?.find((m) => m.id === matchPublicId)
+
+      if (match) {
+        const timeSlotStart = match.slot.range[0]
+          ? format(match.slot.range[0], 'HH:mm')
+          : ''
+        const level = match.level.toLowerCase()
+        toast.success(`You joined the ${timeSlotStart} ${level} match`)
+      } else {
+        toast.success('Successfully joined match!')
+      }
       // Refetch matches to get updated data
       queryClient.invalidateQueries({ queryKey: ['matches', sessionId] })
     },
@@ -744,8 +783,20 @@ export const useMatchActions = ({
         description: errorMessage,
       })
     },
-    onSuccess: () => {
-      toast.success('Successfully left match!')
+    onSuccess: (_data, matchPublicId) => {
+      // Get match data from query cache
+      const matches = queryClient.getQueryData<Match[]>(['matches', sessionId])
+      const match = matches?.find((m) => m.id === matchPublicId)
+
+      if (match) {
+        const timeSlotStart = match.slot.range[0]
+          ? format(match.slot.range[0], 'HH:mm')
+          : ''
+        const level = match.level.toLowerCase()
+        toast.success(`You left the ${timeSlotStart} ${level} match`)
+      } else {
+        toast.success('Successfully left match!')
+      }
       // Refetch matches to get updated data
       queryClient.invalidateQueries({ queryKey: ['matches', sessionId] })
     },
