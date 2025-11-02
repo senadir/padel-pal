@@ -169,6 +169,7 @@ Multi-step authentication using Supabase phone OTP via WhatsApp:
 **Row Level Security (RLS) Policies:**
 
 All tables have RLS enabled. The general pattern is:
+
 - **Public SELECT**: All data is publicly viewable (anonymous + authenticated users)
 - **User operations**: Authenticated users can manage their own records
 - **Organizer operations**: Users with 'organizer' role can manage all records
@@ -223,12 +224,14 @@ The app implements RBAC using Supabase's custom JWT claims feature following the
 - **RLS policies**: Check JWT claim `(auth.jwt() ->> 'user_role')::app_role`
 
 **Roles:**
+
 - **`player`** (default): Standard user with voting and match participation rights
 - **`organizer`**: Admin user with full session and match management capabilities
 
 **Setup Requirements:**
 
 The JWT hook function exists in the database but **must be registered manually** in the Supabase Dashboard:
+
 1. Navigate to **Authentication > Hooks**
 2. Enable **"Custom Access Token"** hook
 3. Select function: `public.custom_access_token_hook`

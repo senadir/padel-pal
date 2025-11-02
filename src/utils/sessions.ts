@@ -638,7 +638,9 @@ export const useVoteForSession = ({
         const otherOptionsInSlot =
           slot?.options.filter((o) => o.level !== variables.level) || []
         const unvotePromises = otherOptionsInSlot
-          .filter((otherOption) => otherOption.players.some((p) => p.id === currentUser.id))
+          .filter((otherOption) =>
+            otherOption.players.some((p) => p.id === currentUser.id),
+          )
           .map((otherOption) =>
             unvoteForOption({
               data: {
@@ -646,7 +648,7 @@ export const useVoteForSession = ({
                 optionId: otherOption.id,
                 playerId: currentUser.id,
               },
-            })
+            }),
           )
         await Promise.all(unvotePromises)
 
