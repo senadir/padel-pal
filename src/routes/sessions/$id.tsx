@@ -36,7 +36,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { fetchSession, useVoteForSession } from '@/utils/sessions'
-import { useAuth } from '@/contexts/auth'
+import { useAuth, useIsOrganizer } from '@/contexts/auth'
 import {
   DrawerDialog,
   DrawerDialogClose,
@@ -82,6 +82,7 @@ function RouteComponent() {
   const { data: session } = useSuspenseQuery(sessionQueryOptions(id))
   const { authData } = useAuth()
   const navigate = useNavigate({ from: Route.fullPath })
+  const isOrganizer = useIsOrganizer()
 
   // Check if user is fully authenticated
   const currentUser = authData?.player
@@ -180,17 +181,23 @@ function RouteComponent() {
             voteForSession={voteForSession}
           />
         ))}
-        <FieldSeparator />
-        <Field>
-          <Button type="submit">
-            <Link to={Route.fullPath + '/matches'}>
-              Close poll and create {generatedGamesCount} options
-            </Link>
-          </Button>
-          <Button variant="outline" type="button" className="w-full">
-            Remove session
-          </Button>
-        </Field>
+        {isOrganizer && (
+          <>
+            <FieldSeparator />
+            <Field>
+              <Button type="submit" disabled={!generatedGamesCount}>
+                <Link to={Route.fullPath + '/matches'}>
+                  {generatedGamesCount === 0
+                    ? 'Close poll'
+                    : `Close poll and create ${generatedGamesCount} options`}
+                </Link>
+              </Button>
+              <Button variant="outline" type="button" className="w-full">
+                Remove session
+              </Button>
+            </Field>
+          </>
+        )}
       </FieldSet>
 
       <DrawerDialog open={slotDrawerOpen} setOpen={toggleDialog}>

@@ -228,10 +228,12 @@ export type Database = {
           limit_players: boolean | null
           players_per_slot: number | null
           public_id: string
+          status: Database["public"]["Enums"]["session_status"]
           time_blocks: number | null
           time_slots: Json | null
           venue_location: string | null
           venue_name: string | null
+          voting_closes_at: string | null
         }
         Insert: {
           created_at?: string | null
@@ -241,10 +243,12 @@ export type Database = {
           limit_players?: boolean | null
           players_per_slot?: number | null
           public_id: string
+          status?: Database["public"]["Enums"]["session_status"]
           time_blocks?: number | null
           time_slots?: Json | null
           venue_location?: string | null
           venue_name?: string | null
+          voting_closes_at?: string | null
         }
         Update: {
           created_at?: string | null
@@ -254,10 +258,33 @@ export type Database = {
           limit_players?: boolean | null
           players_per_slot?: number | null
           public_id?: string
+          status?: Database["public"]["Enums"]["session_status"]
           time_blocks?: number | null
           time_slots?: Json | null
           venue_location?: string | null
           venue_name?: string | null
+          voting_closes_at?: string | null
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          created_at: string | null
+          id: number
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: number
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: number
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
         }
         Relationships: []
       }
@@ -266,10 +293,12 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      custom_access_token_hook: { Args: { event: Json }; Returns: Json }
     }
     Enums: {
+      app_role: "player" | "organizer"
       Levels: "beginner" | "improver" | "intermediate" | "advanced"
+      session_status: "draft" | "voting" | "open" | "cancelled" | "closed"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -397,7 +426,9 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      app_role: ["player", "organizer"],
       Levels: ["beginner", "improver", "intermediate", "advanced"],
+      session_status: ["draft", "voting", "open", "cancelled", "closed"],
     },
   },
 } as const

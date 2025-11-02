@@ -1,4 +1,4 @@
-import { createFileRoute, useRouter } from '@tanstack/react-router'
+import { createFileRoute, redirect, useRouter } from '@tanstack/react-router'
 import { addMinutes, format, isAfter, parse } from 'date-fns'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -38,7 +38,6 @@ const defaultSession: SessionForm = {
   venueName: '',
   venueLocation: '',
   date: new Date(new Date().setDate(new Date().getDate() + 7)),
-  time: parse('16:00', 'HH:mm', new Date()),
   levels: ['beginner', 'improver', 'intermediate'],
   timeBlocks: '60',
   timeSlots: [
@@ -66,9 +65,34 @@ const defaultSession: SessionForm = {
   ],
   limitPlayers: false,
   playersPerSlot: 4,
+  votingClosesAt: undefined,
 }
 
 export const Route = createFileRoute('/sessions/new')({
+  beforeLoad: async ({ context, location }) => {
+    const { authData } = context
+
+    // Check if user is authenticated
+    if (!authData?.user) {
+      throw redirect({
+        to: '/login',
+        search: {
+          redirect: location.href,
+        },
+      })
+    }
+
+    // Check if user is an organizer
+    if (authData.role !== 'organizer') {
+      throw redirect({
+        to: '/',
+        search: {
+          error: 'unauthorized',
+          message: 'Only organizers can create sessions',
+        },
+      })
+    }
+  },
   component: NewSession,
   head: () => ({
     meta: [
@@ -447,6 +471,32 @@ function NewSession() {
               }}
             />
           )}
+        />
+        <FieldSeparator />
+        <form.Field
+          name="votingClosesAt"
+          children={(field) => {
+            const isInvalid =
+              field.state.meta.isTouched && !field.state.meta.isValid
+            return (
+              <Field data-invalid={isInvalid}>
+                <FieldLabel htmlFor={field.name}>
+                  Voting Deadline (Optional)
+                </FieldLabel>
+                <DatePicker
+                  label="Select deadline"
+                  value={field.state.value}
+                  setValue={(value) => field.handleChange(value)}
+                  ariaInvalid={isInvalid}
+                />
+                <FieldDescription>
+                  Set a deadline for when voting closes. Leave empty for no
+                  deadline.
+                </FieldDescription>
+                {isInvalid && <FieldError errors={field.state.meta.errors} />}
+              </Field>
+            )
+          }}
         />
         <form.Field name="limitPlayers">
           {(limitPlayersField) => (

@@ -57,11 +57,22 @@ export const fetchUser = createServerFn({ method: 'GET' }).handler(async () => {
     }
   }
 
+  // Fetch user's highest privilege role from user_roles table
+  const { data: userRoles } = await supabase
+    .from('user_roles')
+    .select('role')
+    .eq('user_id', data.user.id)
+    .order('role', { ascending: true }) // organizer comes before player alphabetically
+
+  // Get the highest privilege role (organizer > player)
+  const role = userRoles?.find((r) => r.role === 'organizer')?.role || userRoles?.[0]?.role || 'player'
+
   return {
     user: data.user,
     player,
     isPhoneVerified,
     hasPlaytomicProfile: !!player?.playtomic_id,
+    role,
   }
 })
 
