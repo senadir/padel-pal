@@ -290,46 +290,22 @@ export type Database = {
       }
       venues: {
         Row: {
-          created_at: string
-          formatted_address: string
-          google_maps_url: string | null
-          google_place_id: string | null
+          created_at: string | null
           id: number
-          last_used_at: string | null
-          latitude: number | null
-          location: string
-          longitude: number | null
-          name: string
-          updated_at: string
-          usage_count: number
+          label: string | null
+          maps_url: string | null
         }
         Insert: {
-          created_at?: string
-          formatted_address: string
-          google_maps_url?: string | null
-          google_place_id?: string | null
+          created_at?: string | null
           id?: number
-          last_used_at?: string | null
-          latitude?: number | null
-          location: string
-          longitude?: number | null
-          name: string
-          updated_at?: string
-          usage_count?: number
+          label?: string | null
+          maps_url?: string | null
         }
         Update: {
-          created_at?: string
-          formatted_address?: string
-          google_maps_url?: string | null
-          google_place_id?: string | null
+          created_at?: string | null
           id?: number
-          last_used_at?: string | null
-          latitude?: number | null
-          location?: string
-          longitude?: number | null
-          name?: string
-          updated_at?: string
-          usage_count?: number
+          label?: string | null
+          maps_url?: string | null
         }
         Relationships: []
       }
