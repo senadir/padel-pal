@@ -10,6 +10,7 @@ import {
 } from '@/utils/google-places'
 import { getRecentVenues } from '@/utils/venues'
 import type { PlaceSearchResult } from '@/utils/types'
+import { cn } from '@/lib/utils'
 
 // Hook to load Google Maps using official Loader
 function useGoogleMapsScript() {
@@ -275,7 +276,7 @@ export function PlaceSearchCombobox({
             )}
 
             {!isSearching && showGoogleResults && (
-              <div className={displayVenues.length > 0 ? 'mt-2' : ''}>
+              <div className={cn(displayVenues.length > 0 && 'mt-2')}>
                 <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
                   Search Google Places
                 </div>
