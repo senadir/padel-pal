@@ -58,3 +58,33 @@ export interface PlaytomicProfile {
   is_premium: boolean
   tenant_tags: string[]
 }
+
+export type Venue = Database['public']['Tables']['venues']['Row']
+
+export interface GooglePlacePrediction {
+  place_id: string
+  description: string
+}
+
+export interface GooglePlaceDetails {
+  place_id: string
+  name: string
+  formatted_address: string
+  url: string // Google Maps URL
+  geometry: {
+    location: {
+      lat: number
+      lng: number
+    }
+  }
+}
+
+export interface PlaceSearchResult {
+  id: string
+  name: string
+  source: 'google' | 'database'
+  googlePlaceId?: string
+  googleMapsUrl?: string
+  latitude?: number
+  longitude?: number
+}

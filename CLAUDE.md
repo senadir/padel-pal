@@ -89,6 +89,7 @@ Multi-step authentication using Supabase phone OTP via WhatsApp:
 - **Environment variables**:
   - `VITE_SUPABASE_URL`
   - `VITE_SUPABASE_PUBLIC_KEY`
+  - `VITE_GOOGLE_PLACES_API_KEY`: Google Places API key for venue search
 
 #### Database Schema
 
@@ -165,6 +166,21 @@ Multi-step authentication using Supabase phone OTP via WhatsApp:
    - `created_at` (TIMESTAMPTZ): When role was assigned
    - **Constraint**: UNIQUE(user_id, role) - prevents duplicate role assignments
    - **Note**: Users can have multiple roles; highest privilege role is used in JWT
+
+8. **`venues`** - Previously used venue locations
+   - `id` (BIGSERIAL, PK): Venue ID
+   - `name` (TEXT, NOT NULL): Venue display name
+   - `formatted_address` (TEXT, NOT NULL): Full address from Google Places
+   - `location` (TEXT): Legacy field (kept for compatibility)
+   - `google_place_id` (TEXT, UNIQUE): Google Places ID for deduplication
+   - `google_maps_url` (TEXT): Google Maps link
+   - `latitude` (NUMERIC(10, 7)): Latitude coordinate
+   - `longitude` (NUMERIC(10, 7)): Longitude coordinate
+   - `usage_count` (INT, DEFAULT 1): Track popularity
+   - `last_used_at` (TIMESTAMPTZ): For sorting recent venues
+   - `created_at` (TIMESTAMPTZ): Record creation timestamp
+   - `updated_at` (TIMESTAMPTZ): Last update timestamp
+   - **Indexes**: On `google_place_id` and `(usage_count DESC, last_used_at DESC)`
 
 **Row Level Security (RLS) Policies:**
 
@@ -278,6 +294,65 @@ function MyComponent() {
 3. RLS policies check `(auth.jwt() ->> 'user_role')::public.app_role = 'organizer'` to enforce permissions
 4. Application queries `user_roles` table and exposes role via `useRole()` hook for UI-level access control
 5. Role changes take effect on next token refresh (or sign-out/sign-in)
+
+### Venue Search System
+
+Unified place search that combines Google Places API with stored venue history:
+
+**Components:**
+- `PlaceSearchCombobox` (`src/components/place-search-combobox.tsx`): Custom combobox using shadcn Command component
+- Client-side filtering of saved venues (instant, no DB queries during search)
+- Debounced Google Places search (300ms) using official Google Maps JavaScript SDK
+- Automatic venue saving and usage tracking on session creation
+
+**Database:**
+- `venues` table: Stores previously used locations with usage statistics
+  - `name`, `formatted_address`: Venue information
+  - `google_place_id`, `google_maps_url`, `latitude`, `longitude`: Google Places data
+  - `usage_count`: Tracks how often each venue is reused
+  - `last_used_at`: For sorting recent venues
+- RLS policies: Public read, organizer-only write
+- Indexes on `google_place_id` and `usage_count` for performance
+
+**Client Functions:**
+- `searchGooglePlaces()` (`src/utils/google-places.ts`): Client-side Google Places Autocomplete using JS SDK
+  - Uses `AutocompleteSuggestion.fetchAutocompleteSuggestions()` API (recommended as of March 2025)
+  - Filters to padel-relevant types: `gym`, `sports_complex`, `sports_club`
+  - Accepts optional `location` parameter for precise location bias
+- `getGooglePlaceDetails()`: Fetches full place details (Maps URL, coordinates) using PlacesService
+- **Session tokens**: Automatically managed for optimal billing (autocomplete + details counted as one request)
+- **Location bias**:
+  - Requests browser geolocation when user starts typing (contextual permission prompt)
+  - Only requests permission once per session
+  - Uses 50km radius around user's actual coordinates for better local results
+  - Falls back to IP-based location if permission denied
+  - Location cached for 5 minutes to avoid repeated permission prompts
+
+**Server Functions:**
+- `getRecentVenues()` (`src/utils/venues.ts`): Fetches all venues sorted by usage/recency
+- `upsertVenue()`: Creates new venue or increments usage_count if exists
+- `getGooglePlaceDetailsServer()`: Server-side place details fetch for session creation
+
+**Environment Variables:**
+- `VITE_GOOGLE_PLACES_API_KEY`: Required for venue search functionality
+  - Must be configured in Google Cloud Console with Places API (new) enabled
+  - Requires HTTP referrer restrictions for production
+  - Add `localhost:3000` for local development
+- Google Maps JS SDK loaded in `__root.tsx` with `libraries=places` parameter
+
+**Key Features:**
+- Loads all venues on mount, filters client-side for instant results
+- Google Places searches go directly from browser → Google (no server round-trip)
+- Three result sections: "Recently Used" (no search), "Your Saved Venues" (filtered DB), "Search Google Places" (API)
+- Deduplicates results by `google_place_id`
+- Increments usage count on venue reuse
+- Graceful fallback if Google API unavailable
+
+**Search Flow:**
+1. User opens combobox → shows all venues sorted by usage
+2. User types → filters saved venues client-side + searches Google Places (debounced)
+3. User selects → fetches full details if needed → populates form
+4. Session created → venue saved/updated in database
 
 ### UI Components
 

@@ -44,6 +44,12 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
         title: 'TanStack Start Starter',
       },
     ],
+    scripts: [
+      {
+        src: `https://maps.googleapis.com/maps/api/js?key=${import.meta.env.VITE_GOOGLE_PLACES_API_KEY}&libraries=places&loading=async`,
+        async: true,
+      },
+    ],
     links: [
       {
         rel: 'stylesheet',

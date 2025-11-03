@@ -33,6 +33,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { formOptions, useForm } from '@tanstack/react-form'
 import { createSession, createSessionValidator } from '@/utils/sessions'
 import type { SessionForm } from '@/utils/types'
+import { PlaceSearchCombobox } from '@/components/place-search-combobox'
 
 const defaultSession: SessionForm = {
   venueName: '',
@@ -187,49 +188,32 @@ function NewSession() {
             Fill in the form below to create a new session
           </FieldLegend>
         </div>
-        <form.Field
-          name="venueName"
-          children={(field) => {
-            const isInvalid =
-              field.state.meta.isTouched && !field.state.meta.isValid
-            return (
-              <Field data-invalid={isInvalid}>
-                <FieldLabel htmlFor={field.name}>Venue Name</FieldLabel>
-                <Input
-                  id={field.name}
-                  name={field.name}
-                  value={field.state.value}
-                  onBlur={field.handleBlur}
-                  onChange={(e) => field.handleChange(e.target.value)}
-                  aria-invalid={isInvalid}
-                  placeholder="Aurial Pàdel Cornellà"
-                />
-                {isInvalid && <FieldError errors={field.state.meta.errors} />}
-              </Field>
-            )
-          }}
-        />
-        <form.Field
-          name="venueLocation"
-          children={(field) => {
-            const isInvalid =
-              field.state.meta.isTouched && !field.state.meta.isValid
-            return (
-              <Field data-invalid={isInvalid}>
-                <FieldLabel htmlFor={field.name}>Venue Location</FieldLabel>
-                <Input
-                  id={field.name}
-                  name={field.name}
-                  value={field.state.value}
-                  onBlur={field.handleBlur}
-                  onChange={(e) => field.handleChange(e.target.value)}
-                  aria-invalid={isInvalid}
-                  placeholder="https://maps.app.goo.gl/1234567890"
-                />
-                {isInvalid && <FieldError errors={field.state.meta.errors} />}
-              </Field>
-            )
-          }}
+        <form.Subscribe
+          selector={(state) => ({
+            venueName: state.values.venueName,
+            venueLocation: state.values.venueLocation,
+          })}
+          children={({ venueName, venueLocation }) => (
+            <Field>
+              <FieldLabel htmlFor="venue">Venue</FieldLabel>
+              <PlaceSearchCombobox
+                value={
+                  venueName
+                    ? { name: venueName, location: venueLocation }
+                    : undefined
+                }
+                onSelect={(place) => {
+                  // Update both fields in form state
+                  form.setFieldValue('venueName', place.name)
+                  form.setFieldValue('venueLocation', place.location)
+                }}
+                placeholder="Search for a padel venue..."
+              />
+              <FieldDescription>
+                Search for a venue or select from previously used locations.
+              </FieldDescription>
+            </Field>
+          )}
         />
         <form.Field
           name="date"

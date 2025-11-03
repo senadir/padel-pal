@@ -5,6 +5,7 @@ declare namespace Cloudflare {
   interface Env {
     VITE_SUPABASE_URL: string
     VITE_SUPABASE_PUBLIC_KEY: string
+    VITE_GOOGLE_PLACES_API_KEY: string
   }
 }
 interface Env extends Cloudflare.Env {}
@@ -16,7 +17,7 @@ type StringifyValues<EnvType extends Record<string, unknown>> = {
 declare namespace NodeJS {
   interface ProcessEnv
     extends StringifyValues<
-      Pick<Cloudflare.Env, 'VITE_SUPABASE_URL' | 'VITE_SUPABASE_PUBLIC_KEY'>
+      Pick<Cloudflare.Env, 'VITE_SUPABASE_URL' | 'VITE_SUPABASE_PUBLIC_KEY' | 'VITE_GOOGLE_PLACES_API_KEY'>
     > {}
 }
 

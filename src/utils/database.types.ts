@@ -288,6 +288,51 @@ export type Database = {
         }
         Relationships: []
       }
+      venues: {
+        Row: {
+          created_at: string
+          formatted_address: string
+          google_maps_url: string | null
+          google_place_id: string | null
+          id: number
+          last_used_at: string | null
+          latitude: number | null
+          location: string
+          longitude: number | null
+          name: string
+          updated_at: string
+          usage_count: number
+        }
+        Insert: {
+          created_at?: string
+          formatted_address: string
+          google_maps_url?: string | null
+          google_place_id?: string | null
+          id?: number
+          last_used_at?: string | null
+          latitude?: number | null
+          location: string
+          longitude?: number | null
+          name: string
+          updated_at?: string
+          usage_count?: number
+        }
+        Update: {
+          created_at?: string
+          formatted_address?: string
+          google_maps_url?: string | null
+          google_place_id?: string | null
+          id?: number
+          last_used_at?: string | null
+          latitude?: number | null
+          location?: string
+          longitude?: number | null
+          name?: string
+          updated_at?: string
+          usage_count?: number
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
