@@ -14,8 +14,6 @@ import { Button } from '@/components/ui/button'
 import {
   ChevronRight,
   CalendarPlus,
-  Bell,
-  ArrowUpRightIcon,
 } from 'lucide-react'
 // Removed unused imports from '@/components/ui/card'
 import {
