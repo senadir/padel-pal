@@ -64,6 +64,10 @@ export type Venue = Database['public']['Tables']['venues']['Row']
 export interface GooglePlacePrediction {
   place_id: string
   description: string
+  structured_formatting: {
+    main_text: string
+    secondary_text: string
+  }
 }
 
 export interface GooglePlaceDetails {

@@ -102,7 +102,6 @@ export function PlaceSearchCombobox({
       const googlePlaces: PlaceSearchResult[] = results.map((place) => ({
         id: place.place_id,
         name: place.structured_formatting.main_text,
-        address: place.structured_formatting.secondary_text,
         source: 'google' as const,
         googlePlaceId: place.place_id,
       }))
@@ -136,7 +135,7 @@ export function PlaceSearchCombobox({
     () =>
       searchValue.length >= 2
         ? matchSorter(allVenues, searchValue, {
-            keys: ['name', 'address'],
+            keys: ['name'],
           })
         : allVenues,
     [searchValue, allVenues],
@@ -168,7 +167,8 @@ export function PlaceSearchCombobox({
   const showGoogleResults = searchValue.length >= 3 && googleResults.length > 0
   const isSearching = isSearchingGoogle || isLoadingVenues
   const error = googleError || placeDetailsMutation.error
-  const hasResults = displayVenues.length > 0 || showGoogleResults || isSearching
+  const hasResults =
+    displayVenues.length > 0 || showGoogleResults || isSearching
 
   return (
     <div className="w-full">

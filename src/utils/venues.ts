@@ -7,7 +7,7 @@ import type { PlaceSearchResult } from './types'
  * Returns venues ordered by most recently created (newest first)
  */
 export const getRecentVenues = createServerFn({ method: 'GET' }).handler(
-  async (): Promise<PlaceSearchResult[]> => {
+  async (): Promise<Array<PlaceSearchResult>> => {
     const supabase = getSupabaseServerClient()
 
     const { data: venues, error } = await supabase
@@ -22,10 +22,9 @@ export const getRecentVenues = createServerFn({ method: 'GET' }).handler(
     }
 
     // Transform to PlaceSearchResult format
-    return (venues || []).map((venue) => ({
+    return venues.map((venue) => ({
       id: venue.id.toString(),
       name: venue.label,
-      address: '', // No address in simplified schema
       source: 'database' as const,
       googleMapsUrl: venue.maps_url,
     }))
@@ -62,22 +61,23 @@ export const upsertVenue = createServerFn({ method: 'POST' })
       .select('id')
       .single()
 
-    if (error) {
+    if (error || !venue) {
       // If ignoreDuplicates is true and venue exists, we get null data but no error
       // In that case, fetch the existing venue
-      if (!venue) {
-        const { data: existing } = await supabase
-          .from('venues')
-          .select('id')
-          .eq('maps_url', data.mapsUrl)
-          .single()
+      const { data: existing, error: fetchError } = await supabase
+        .from('venues')
+        .select('id')
+        .eq('maps_url', data.mapsUrl)
+        .single()
 
-        if (existing) {
-          return { id: existing.id }
-        }
+      if (existing) {
+        return { id: existing.id }
       }
-      throw new Error(`Failed to upsert venue: ${error.message}`)
+
+      throw new Error(
+        `Failed to upsert venue: ${error ? error.message : fetchError ? fetchError.message : 'Unknown error'}`,
+      )
     }
 
-    return { id: venue?.id }
+    return { id: venue.id }
   })
