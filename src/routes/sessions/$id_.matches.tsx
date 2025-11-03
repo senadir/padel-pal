@@ -325,7 +325,7 @@ const MatchSlot = ({
             <CollapsibleContent>
               <div className="grid grid-cols-2 gap-2">
                 {match.players.map((player: Player) => {
-                  const isCurrentUser = currentUser ? player.id === currentUser.id : false
+                  const isCurrentUser = currentUser?.id === player.id
                   return (
                     <button
                       key={player.id}
