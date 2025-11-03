@@ -299,11 +299,12 @@ Unified place search that combines Google Places API with stored venue history:
 - Automatic venue saving and usage tracking on session creation
 
 **Database:**
-- `venues` table: Stores previously used locations with usage statistics
-  - `name`, `formatted_address`: Venue information
-  - `google_place_id`, `google_maps_url`, `latitude`, `longitude`: Google Places data
-  - `usage_count`: Tracks how often each venue is reused
-  - `last_used_at`: For sorting recent venues
+- `venues` table: Stores previously used locations
+  - `id`: Primary key
+  - `label`: Venue name or label
+  - `maps_url`: Google Maps URL for the venue
+  - `place_id`: Google Place ID
+  - `created_at`: Timestamp when the venue was added
 - RLS policies: Public read, organizer-only write
 - Indexes on `google_place_id` and `usage_count` for performance
 
