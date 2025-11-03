@@ -134,8 +134,6 @@ function App() {
           <div className="flex flex-col gap-4">
             {sessions.map((session) => {
               const now = new Date()
-              const votingClosed =
-                session.votingClosesAt && isBefore(session.votingClosesAt, now)
 
               return (
                 <Link
