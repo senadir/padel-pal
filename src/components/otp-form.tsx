@@ -52,7 +52,6 @@ export function OTPForm({ redirect, className, ...props }: OTPFormProps) {
           : '/login/playtomic'
         window.location.href = playtomicUrl
       }
-
     },
     onError: (error) => {
       console.error('OTP verification error:', error)
@@ -71,7 +70,7 @@ export function OTPForm({ redirect, className, ...props }: OTPFormProps) {
 
   useEffect(() => {
     if (otp.length === 6) {
-      verifyButtonRef.current?.focus()
+      verifyButtonRef.current?.click()
     }
   }, [otp])
 
@@ -121,6 +120,7 @@ export function OTPForm({ redirect, className, ...props }: OTPFormProps) {
               containerClassName="gap-2 justify-center"
               value={otp}
               onChange={(value) => setOtp(value)}
+              autoFocus={true}
             >
               <InputOTPGroup className="gap-2.5 *:data-[slot=input-otp-slot]:h-16 *:data-[slot=input-otp-slot]:w-10 *:data-[slot=input-otp-slot]:rounded-md *:data-[slot=input-otp-slot]:border *:data-[slot=input-otp-slot]:text-xl">
                 <InputOTPSlot index={0} />
@@ -142,7 +142,9 @@ export function OTPForm({ redirect, className, ...props }: OTPFormProps) {
             <Button
               type="submit"
               size="lg"
-              disabled={otp.length !== 6 || !phone || verifyOtpMutation.isPending}
+              disabled={
+                otp.length !== 6 || !phone || verifyOtpMutation.isPending
+              }
               ref={verifyButtonRef}
             >
               {verifyOtpMutation.isPending ? 'Verifying...' : 'Verify'}

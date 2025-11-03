@@ -1,7 +1,7 @@
 // contexts/auth.tsx
 import { createContext, useContext, ReactNode } from 'react'
 import { useRouteContext } from '@tanstack/react-router'
-import type { Player } from '@/utils/types'
+import type { Player, AppRole } from '@/utils/types'
 import { User } from '@supabase/supabase-js'
 
 type AuthData = {
@@ -9,6 +9,7 @@ type AuthData = {
   player: Player | null
   isPhoneVerified: boolean
   hasPlaytomicProfile: boolean
+  role: AppRole
 }
 
 type AuthContextType = {
@@ -30,4 +31,22 @@ export function useAuth() {
     authData: context.authData || null,
     isLoading: false,
   }
+}
+
+/**
+ * Hook to get the current user's role
+ * @returns The user's role ('player' or 'organizer'), defaults to 'player' if not authenticated
+ */
+export function useRole(): AppRole {
+  const { authData } = useAuth()
+  return authData?.role || 'player'
+}
+
+/**
+ * Hook to check if the current user is an organizer
+ * @returns true if the user has the 'organizer' role, false otherwise
+ */
+export function useIsOrganizer(): boolean {
+  const role = useRole()
+  return role === 'organizer'
 }

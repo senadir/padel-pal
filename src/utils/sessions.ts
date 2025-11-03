@@ -23,7 +23,69 @@ import type { Match, Player, Session, SessionForm } from './types'
 
 export const fetchSessions = createServerFn({ method: 'GET' }).handler(
   async () => {
-    return Promise.resolve([getMockSession()])
+    try {
+      const supabase = getSupabaseServerClient()
+
+      // Fetch all sessions ordered by date (newest first)
+      const { data: sessionsData, error } = await supabase
+        .from('sessions')
+        .select('*')
+        .order('date', { ascending: false })
+
+      if (error) {
+        console.error('Error fetching sessions:', error)
+        throw new Error(`Failed to fetch sessions: ${error.message}`)
+      }
+
+      if (!sessionsData || sessionsData.length === 0) {
+        return []
+      }
+
+      // Fetch all matches for these sessions to determine phase
+      const sessionIds = sessionsData.map((s) => s.id)
+      const { data: matchesData, error: matchesError } = await supabase
+        .from('matches')
+        .select('session_id, id')
+        .in('session_id', sessionIds)
+
+      if (matchesError) {
+        console.error('Error fetching matches:', matchesError)
+      }
+
+      // Create a map of session_id to match count
+      const matchCountMap = new Map<number, number>()
+      matchesData?.forEach((match) => {
+        const count = matchCountMap.get(match.session_id) || 0
+        matchCountMap.set(match.session_id, count + 1)
+      })
+
+      // Transform sessions to include basic info and phase
+      const sessions = sessionsData.map((sessionRow) => {
+        const sessionDate = sessionRow.date
+          ? new Date(sessionRow.date)
+          : new Date()
+
+        const hasMatches = (matchCountMap.get(sessionRow.id) || 0) > 0
+
+        return {
+          id: sessionRow.public_id,
+          venueName: sessionRow.venue_name || '',
+          venueLocation: sessionRow.venue_location || '',
+          date: sessionDate,
+          levels: sessionRow.levels || [],
+          hasMatches,
+          status: sessionRow.status,
+          votingClosesAt: sessionRow.voting_closes_at
+            ? new Date(sessionRow.voting_closes_at)
+            : null,
+        }
+      })
+
+      return sessions
+    } catch (err) {
+      console.error('Error in fetchSessions:', err)
+      throw err
+    }
   },
 )
 
@@ -827,7 +889,6 @@ export const createSessionValidator: z.ZodType<SessionForm> = z.object({
     .string()
     .url({ message: 'Please enter a valid URL for the venue' }),
   date: z.date(),
-  time: z.date(),
   levels: z
     .array(z.string())
     .min(1, { message: 'At least one level must be selected' }),
@@ -841,6 +902,7 @@ export const createSessionValidator: z.ZodType<SessionForm> = z.object({
     .min(4, { message: 'Players per slot must be at least 4' })
     .multipleOf(4, { message: 'Players per slot must be a multiple of 4' })
     .optional(),
+  votingClosesAt: z.date().optional(),
 })
 
 export const createSession = createServerFn({ method: 'POST' })
@@ -858,12 +920,7 @@ export const createSession = createServerFn({ method: 'POST' })
         venue_name: data.venueName,
         venue_location: data.venueLocation,
         // Combine session.date and session.time into a single ISO datetime string for the "date" field.
-        date: formatISO(
-          setHours(
-            setMinutes(data.date, getMinutes(data.time)),
-            getHours(data.time),
-          ),
-        ),
+        date: formatISO(data.date),
         levels: data.levels,
         time_blocks: parseInt(data.timeBlocks),
         time_slots: JSON.stringify(
@@ -880,6 +937,10 @@ export const createSession = createServerFn({ method: 'POST' })
         ),
         limit_players: data.limitPlayers,
         players_per_slot: data.playersPerSlot,
+        status: 'draft' as const, // Always create sessions as draft
+        voting_closes_at: data.votingClosesAt
+          ? formatISO(data.votingClosesAt)
+          : null,
       }
 
       const { data: session, error } = await supabase

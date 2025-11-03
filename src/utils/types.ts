@@ -1,6 +1,9 @@
 import { Database } from './database.types'
 
 export type Player = Database['public']['Tables']['players']['Row']
+export type AppRole = Database['public']['Enums']['app_role']
+export type UserRole = Database['public']['Tables']['user_roles']['Row']
+export type SessionStatus = Database['public']['Enums']['session_status']
 
 export type Option = {
   id: string
@@ -25,12 +28,12 @@ export type SessionForm = {
   venueName: string
   venueLocation: string
   date: Date
-  time: Date
   levels: Array<string>
   timeBlocks: string
   timeSlots: Array<{ id: string; range: [Date, Date] }>
   limitPlayers: boolean
   playersPerSlot?: number
+  votingClosesAt?: Date
 }
 
 export interface Session extends Omit<SessionForm, 'timeBlocks'> {

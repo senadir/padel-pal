@@ -70,7 +70,8 @@ Multi-step authentication using Supabase phone OTP via WhatsApp:
   user: User | null,              // Supabase user object
   player: Player | null,          // Player profile from database
   isPhoneVerified: boolean,       // Has verified phone OTP
-  hasPlaytomicProfile: boolean    // Has Playtomic credentials
+  hasPlaytomicProfile: boolean,   // Has Playtomic credentials
+  role: 'player' | 'organizer'    // User role for RBAC (defaults to 'player')
 }
 ```
 
@@ -157,13 +158,51 @@ Multi-step authentication using Supabase phone OTP via WhatsApp:
    - `players` (JSONB[]): Array of player objects
    - `created_at` (TIMESTAMPTZ): Record creation timestamp
 
+7. **`user_roles`** - Role assignments for RBAC system
+   - `id` (BIGSERIAL, PK): Role assignment ID
+   - `user_id` (UUID, FK → auth.users): User being assigned a role
+   - `role` (app_role ENUM): Role value ('player' or 'organizer')
+   - `created_at` (TIMESTAMPTZ): When role was assigned
+   - **Constraint**: UNIQUE(user_id, role) - prevents duplicate role assignments
+   - **Note**: Users can have multiple roles; highest privilege role is used in JWT
+
 **Row Level Security (RLS) Policies:**
 
-- **`players` table**:
-  - SELECT: Allowed for all users (authenticated and anonymous) - sessions are publicly viewable
-  - INSERT/UPDATE/DELETE: Restricted to own records only (auth.uid() = id)
+All tables have RLS enabled. The general pattern is:
+- **Public SELECT**: All data is publicly viewable (anonymous + authenticated users)
+- **User operations**: Authenticated users can manage their own records
+- **Organizer operations**: Users with 'organizer' role can manage all records
 
-- **Other tables**: Follow similar patterns with appropriate read/write restrictions
+**Detailed policies by table:**
+
+- **`players` table**:
+  - SELECT: Public access (anon + authenticated)
+  - INSERT: Own records only (auth.uid() = id)
+  - UPDATE: Own records only (auth.uid() = id)
+  - DELETE: Own records only (auth.uid() = id)
+
+- **`sessions` table**:
+  - SELECT: Public access
+  - INSERT/UPDATE/DELETE: Organizers only
+
+- **`games` table** (legacy):
+  - SELECT: Public access
+  - INSERT/UPDATE/DELETE: Organizers only
+
+- **`session_votes` table**:
+  - SELECT: Public access
+  - INSERT: Users can vote for themselves (auth.uid() = player_id)
+  - DELETE: Users can delete own votes OR organizers can delete any vote
+
+- **`matches` table**:
+  - SELECT: Public access
+  - INSERT/UPDATE/DELETE: Organizers only
+
+- **`match_participants` table**:
+  - SELECT: Public access
+  - INSERT: Users can join matches themselves OR organizers can add anyone
+  - UPDATE: Organizers only
+  - DELETE: Users can leave their own matches OR organizers can remove anyone
 
 **Important Notes:**
 
@@ -171,6 +210,71 @@ Multi-step authentication using Supabase phone OTP via WhatsApp:
 2. **Time Overlap Prevention**: PostgreSQL trigger on `match_participants` prevents double-booking players in overlapping time slots
 3. **Hybrid Match Generation**: Matches are created from votes, then manual joins are allowed for remaining slots
 4. **UUID vs BIGINT**: `players.id` uses UUID to match Supabase auth, other IDs use BIGSERIAL for efficiency
+
+### Role-Based Access Control (RBAC)
+
+The app implements RBAC using Supabase's custom JWT claims feature following the [official Supabase RBAC tutorial](https://supabase.com/docs/guides/database/postgres/custom-claims-and-role-based-access-control-rbac). Permissions are enforced at the database level using RLS policies.
+
+**Architecture:**
+
+- **`app_role` enum**: Defines valid roles (`'player'`, `'organizer'`)
+- **`user_roles` table**: Maps users to roles (many-to-many relationship)
+- **JWT hook function**: Adds `user_role` claim to JWT tokens
+- **RLS policies**: Check JWT claim `(auth.jwt() ->> 'user_role')::app_role`
+
+**Roles:**
+- **`player`** (default): Standard user with voting and match participation rights
+- **`organizer`**: Admin user with full session and match management capabilities
+
+**Setup Requirements:**
+
+The JWT hook function exists in the database but **must be registered manually** in the Supabase Dashboard:
+1. Navigate to **Authentication > Hooks**
+2. Enable **"Custom Access Token"** hook
+3. Select function: `public.custom_access_token_hook`
+
+See `RBAC_SETUP.md` for detailed setup instructions, troubleshooting, and how to add new organizers.
+
+**Application-Level Usage:**
+
+```typescript
+import { useRole, useIsOrganizer } from '@/contexts/auth'
+
+function MyComponent() {
+  const role = useRole() // 'player' | 'organizer'
+  const isOrganizer = useIsOrganizer() // boolean
+
+  if (isOrganizer) {
+    return <AdminPanel />
+  }
+  return <PlayerView />
+}
+```
+
+**Role Permissions:**
+
+- **Player role** (default):
+  - View all sessions and matches
+  - Vote on session time slots
+  - Join/leave matches
+  - Manage own profile
+  - Delete own votes
+
+- **Organizer role** (all player permissions plus):
+  - Create/edit/delete sessions
+  - Create/edit/delete matches
+  - Add/remove any player from matches
+  - Delete any votes
+  - Manage games (legacy)
+  - Manage user roles via `user_roles` table
+
+**How It Works:**
+
+1. User authenticates via phone OTP
+2. JWT hook queries `user_roles` table and adds highest privilege role to JWT as `user_role` claim
+3. RLS policies check `(auth.jwt() ->> 'user_role')::public.app_role = 'organizer'` to enforce permissions
+4. Application queries `user_roles` table and exposes role via `useRole()` hook for UI-level access control
+5. Role changes take effect on next token refresh (or sign-out/sign-in)
 
 ### UI Components
 
