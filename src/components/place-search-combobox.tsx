@@ -3,46 +3,12 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import * as Ariakit from '@ariakit/react'
 import { matchSorter } from 'match-sorter'
 import { Loader2 } from 'lucide-react'
-import { Loader } from '@googlemaps/js-api-loader'
 import {
   searchGooglePlaces,
   getGooglePlaceDetails,
 } from '@/utils/google-places'
 import { getRecentVenues } from '@/utils/venues'
 import type { PlaceSearchResult } from '@/utils/types'
-
-// Hook to load Google Maps using official Loader
-function useGoogleMapsScript() {
-  const [isLoaded, setIsLoaded] = useState(false)
-  const [error, setError] = useState<Error | null>(null)
-
-  useEffect(() => {
-    // Check if already loaded
-    if (typeof google !== 'undefined' && google.maps) {
-      setIsLoaded(true)
-      return
-    }
-
-    // Load using official Loader
-    const loader = new Loader({
-      apiKey: import.meta.env.VITE_GOOGLE_PLACES_API_KEY || '',
-      version: 'weekly',
-      libraries: ['places'],
-    })
-
-    loader
-      .load()
-      .then(() => {
-        setIsLoaded(true)
-      })
-      .catch((err) => {
-        console.error('Failed to load Google Maps:', err)
-        setError(new Error('Failed to load Google Maps'))
-      })
-  }, [])
-
-  return { isLoaded, error }
-}
 
 interface PlaceSearchComboboxProps {
   value?: { name: string; location: string; placeId?: string }
@@ -105,9 +71,6 @@ export function PlaceSearchCombobox({
   const [searchValue, setSearchValue] = useState(value?.name || '')
   const debouncedSearch = useDebouncedValue(searchValue, 300)
 
-  // Load Google Maps script dynamically
-  const { isLoaded: mapsLoaded, error: mapsError } = useGoogleMapsScript()
-
   // Sync searchValue with external value prop
   useEffect(() => {
     if (value?.name) {
@@ -134,10 +97,12 @@ export function PlaceSearchCombobox({
     queryFn: async () => {
       if (!debouncedSearch || debouncedSearch.length < 3) return []
 
-      const results = await searchGooglePlaces(
-        debouncedSearch,
-        userLocation || undefined,
-      )
+      const results = await searchGooglePlaces({
+        data: {
+          query: debouncedSearch,
+          location: userLocation || undefined,
+        },
+      })
 
       // Transform and filter duplicates
       const googlePlaces: PlaceSearchResult[] = results.map((place) => ({
@@ -154,7 +119,7 @@ export function PlaceSearchCombobox({
           ),
       )
     },
-    enabled: debouncedSearch.length >= 3 && mapsLoaded,
+    enabled: debouncedSearch.length >= 3,
   })
 
   // Mutation: Get place details on selection
@@ -215,10 +180,9 @@ export function PlaceSearchCombobox({
 
   // Derived state
   const displayVenues = searchValue.length === 0 ? allVenues : filteredVenues
-  const showGoogleResults =
-    searchValue.length >= 3 && googleResults.length > 0 && mapsLoaded
+  const showGoogleResults = searchValue.length >= 3 && googleResults.length > 0
   const isSearching = isSearchingGoogle || isLoadingVenues
-  const error = googleError || placeDetailsMutation.error || mapsError
+  const error = googleError || placeDetailsMutation.error
   const hasResults =
     displayVenues.length > 0 || showGoogleResults || isSearching
 
