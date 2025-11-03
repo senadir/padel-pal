@@ -269,9 +269,9 @@ const MatchSlot = ({
   defaultOpen?: boolean
 }) => {
   const [open, setOpen] = useState(defaultOpen)
-  const isCurrentUserInMatch = currentUser ? match.players.some(
-    (player) => player.id === currentUser.id,
-  ) : false
+  const isCurrentUserInMatch = match.players.some(
+    (player) => player.id === currentUser?.id,
+  )
 
   const handleSlotClick = (e: React.MouseEvent) => {
     e.preventDefault()
