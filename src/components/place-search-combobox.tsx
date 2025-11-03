@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, startTransition, useMemo } from 'react'
+import { useState, useEffect, startTransition, useMemo } from 'react'
+import { useQuery, useMutation } from '@tanstack/react-query'
 import * as Ariakit from '@ariakit/react'
 import { matchSorter } from 'match-sorter'
 import { Loader2 } from 'lucide-react'
@@ -15,22 +16,56 @@ interface PlaceSearchComboboxProps {
   placeholder?: string
 }
 
+// Custom hook for geolocation
+function useGeolocation(enabled: boolean) {
+  const [location, setLocation] = useState<{
+    lat: number
+    lng: number
+  } | null>(null)
+
+  useEffect(() => {
+    if (!enabled || !('geolocation' in navigator)) return
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setLocation({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        })
+      },
+      (error) => {
+        console.warn('Geolocation permission denied:', error.message)
+      },
+      {
+        enableHighAccuracy: false,
+        timeout: 5000,
+        maximumAge: 300000, // Cache for 5 minutes
+      },
+    )
+  }, [enabled])
+
+  return location
+}
+
+// Custom hook for debounced value
+function useDebouncedValue<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState(value)
+
+  useEffect(() => {
+    const timeoutId = setTimeout(() => setDebouncedValue(value), delay)
+    return () => clearTimeout(timeoutId)
+  }, [value, delay])
+
+  return debouncedValue
+}
+
 export function PlaceSearchCombobox({
   value,
   onSelect,
   placeholder = 'Search for a venue...',
 }: PlaceSearchComboboxProps) {
   const [searchValue, setSearchValue] = useState(value?.name || '')
-  const [isSearching, setIsSearching] = useState(false)
-  const [isSelecting, setIsSelecting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [googleResults, setGoogleResults] = useState<PlaceSearchResult[]>([])
-  const [allVenues, setAllVenues] = useState<PlaceSearchResult[]>([])
-  const [userLocation, setUserLocation] = useState<{
-    lat: number
-    lng: number
-  } | null>(null)
-  const [hasRequestedLocation, setHasRequestedLocation] = useState(false)
+  const debouncedSearch = useDebouncedValue(searchValue, 300)
 
   // Sync searchValue with external value prop
   useEffect(() => {
@@ -39,51 +74,64 @@ export function PlaceSearchCombobox({
     }
   }, [value?.name])
 
-  // Request user's location when they start typing (only once)
-  useEffect(() => {
-    if (
-      searchValue.length > 0 &&
-      !hasRequestedLocation &&
-      'geolocation' in navigator
-    ) {
-      setHasRequestedLocation(true)
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setUserLocation({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-          })
-          console.log('User location acquired for venue search')
-        },
-        (error) => {
-          console.warn(
-            'Geolocation permission denied, using IP-based location:',
-            error.message,
-          )
-        },
-        {
-          enableHighAccuracy: false,
-          timeout: 5000,
-          maximumAge: 300000, // Cache for 5 minutes
-        },
+  // Request geolocation when user starts typing
+  const userLocation = useGeolocation(searchValue.length > 0)
+
+  // Query: Load all venues
+  const { data: allVenues = [], isLoading: isLoadingVenues } = useQuery({
+    queryKey: ['venues'],
+    queryFn: getRecentVenues,
+  })
+
+  // Query: Search Google Places (debounced)
+  const {
+    data: googleResults = [],
+    isLoading: isSearchingGoogle,
+    error: googleError,
+  } = useQuery({
+    queryKey: ['google-places', debouncedSearch, userLocation],
+    queryFn: async () => {
+      if (!debouncedSearch || debouncedSearch.length < 3) return []
+
+      const results = await searchGooglePlaces(
+        debouncedSearch,
+        userLocation || undefined,
       )
-    }
-  }, [searchValue, hasRequestedLocation])
 
-  // Load all venues on mount
-  useEffect(() => {
-    const loadVenues = async () => {
-      try {
-        const venues = await getRecentVenues()
-        setAllVenues(venues)
-      } catch (error) {
-        console.error('Error loading venues:', error)
-      }
-    }
-    loadVenues()
-  }, [])
+      // Transform and filter duplicates
+      const googlePlaces: PlaceSearchResult[] = results.map((place) => ({
+        id: place.place_id,
+        name: place.structured_formatting.main_text,
+        address: place.structured_formatting.secondary_text,
+        source: 'google' as const,
+        googlePlaceId: place.place_id,
+      }))
 
-  // Client-side filter venues by search query using match-sorter
+      return googlePlaces.filter(
+        (gPlace) =>
+          !allVenues.some(
+            (venue) => venue.googlePlaceId === gPlace.googlePlaceId,
+          ),
+      )
+    },
+    enabled: debouncedSearch.length >= 3,
+  })
+
+  // Mutation: Get place details on selection
+  const placeDetailsMutation = useMutation({
+    mutationFn: getGooglePlaceDetails,
+    onSuccess: (details, placeId) => {
+      onSelect({ name: details.name, location: details.url })
+      startTransition(() => {
+        setSearchValue(details.name)
+      })
+    },
+    onError: (error) => {
+      console.error('Error selecting place:', error)
+    },
+  })
+
+  // Client-side filter venues by search query
   const filteredVenues = useMemo(
     () =>
       searchValue.length >= 2
@@ -94,103 +142,33 @@ export function PlaceSearchCombobox({
     [searchValue, allVenues],
   )
 
-  // Debounced Google Places search
-  const performGoogleSearch = useCallback(
-    async (query: string) => {
-      if (!query || query.length < 3) {
-        setGoogleResults([])
-        setError(null)
-        return
-      }
-
-      setIsSearching(true)
-      setError(null)
-
-      try {
-        // Pass user location to bias search results
-        const results = await searchGooglePlaces(
-          query,
-          userLocation || undefined,
-        )
-
-        // Transform Google results to PlaceSearchResult format
-        const googlePlaces: PlaceSearchResult[] = results.map((place) => ({
-          id: place.place_id,
-          name: place.structured_formatting.main_text,
-          address: place.structured_formatting.secondary_text,
-          source: 'google' as const,
-          googlePlaceId: place.place_id,
-        }))
-
-        // Filter out Google results that already exist in database
-        const uniqueGoogleResults = googlePlaces.filter(
-          (gPlace) =>
-            !allVenues.some(
-              (venue) => venue.googlePlaceId === gPlace.googlePlaceId,
-            ),
-        )
-
-        setGoogleResults(uniqueGoogleResults)
-      } catch (error) {
-        console.error('Error searching Google Places:', error)
-        setError('Failed to search venues. Please try again.')
-        setGoogleResults([])
-      } finally {
-        setIsSearching(false)
-      }
-    },
-    [allVenues, userLocation],
-  )
-
-  // Debounce Google search
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      performGoogleSearch(searchValue)
-    }, 300)
-
-    return () => clearTimeout(timeoutId)
-  }, [searchValue, performGoogleSearch])
-
   // Handle place selection
-  const handleSelectPlace = async (place: PlaceSearchResult) => {
-    setIsSelecting(true)
-    setError(null)
-
-    try {
-      let name = place.name
-      let location = place.googleMapsUrl || ''
-
-      // If selecting a Google place without full details, fetch them
-      if (
-        place.source === 'google' &&
-        place.googlePlaceId &&
-        !place.googleMapsUrl
-      ) {
-        const details = await getGooglePlaceDetails(place.googlePlaceId)
-        name = details.name
-        location = details.url
-      }
-
-      // Call parent's onSelect
-      onSelect({ name, location })
-
-      // Set search value to the selected name
-      startTransition(() => {
-        setSearchValue(name)
+  const handleSelectPlace = (place: PlaceSearchResult) => {
+    // If selecting a Google place without full details, fetch them
+    if (
+      place.source === 'google' &&
+      place.googlePlaceId &&
+      !place.googleMapsUrl
+    ) {
+      placeDetailsMutation.mutate(place.googlePlaceId)
+    } else {
+      // Database venue with all details
+      onSelect({
+        name: place.name,
+        location: place.googleMapsUrl || '',
       })
-    } catch (error) {
-      console.error('Error selecting place:', error)
-      setError('Failed to select venue. Please try again.')
-    } finally {
-      setIsSelecting(false)
+      startTransition(() => {
+        setSearchValue(place.name)
+      })
     }
   }
 
-  // Show "Recently Used" section when no search query, otherwise show filtered results
+  // Derived state
   const displayVenues = searchValue.length === 0 ? allVenues : filteredVenues
   const showGoogleResults = searchValue.length >= 3 && googleResults.length > 0
-  const hasResults =
-    displayVenues.length > 0 || showGoogleResults || isSearching
+  const isSearching = isSearchingGoogle || isLoadingVenues
+  const error = googleError || placeDetailsMutation.error
+  const hasResults = displayVenues.length > 0 || showGoogleResults || isSearching
 
   return (
     <div className="w-full">
@@ -202,13 +180,13 @@ export function PlaceSearchCombobox({
       >
         <Ariakit.Combobox
           placeholder={placeholder}
-          disabled={isSelecting}
+          disabled={placeDetailsMutation.isPending}
           className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm"
         />
 
         {error && (
           <div className="mt-2 rounded-md border border-destructive px-3 py-2 text-sm text-destructive">
-            {error}
+            {error instanceof Error ? error.message : 'An error occurred'}
           </div>
         )}
 
