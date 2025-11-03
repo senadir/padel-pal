@@ -1,27 +1,30 @@
 import { createServerFn } from '@tanstack/react-start'
+import { Loader } from '@googlemaps/js-api-loader'
 import type { GooglePlacePrediction, GooglePlaceDetails } from './types'
 
-// Helper to wait for Google Maps API to load
-function waitForGoogleMaps(): Promise<typeof google.maps> {
-  return new Promise((resolve, reject) => {
-    if (typeof google !== 'undefined' && google.maps) {
-      resolve(google.maps)
-      return
-    }
+// Singleton loader instance
+let loaderInstance: Loader | null = null
 
-    const checkInterval = setInterval(() => {
-      if (typeof google !== 'undefined' && google.maps) {
-        clearInterval(checkInterval)
-        resolve(google.maps)
-      }
-    }, 100)
+function getLoader(): Loader {
+  if (!loaderInstance) {
+    loaderInstance = new Loader({
+      apiKey: import.meta.env.VITE_GOOGLE_PLACES_API_KEY || '',
+      version: 'weekly',
+      libraries: ['places'],
+    })
+  }
+  return loaderInstance
+}
 
-    // Timeout after 10 seconds
-    setTimeout(() => {
-      clearInterval(checkInterval)
-      reject(new Error('Google Maps API failed to load'))
-    }, 10000)
-  })
+// Helper to ensure Google Maps API is loaded
+async function ensureGoogleMapsLoaded(): Promise<typeof google.maps> {
+  if (typeof google !== 'undefined' && google.maps) {
+    return google.maps
+  }
+
+  const loader = getLoader()
+  await loader.load()
+  return google.maps
 }
 
 // Session token for grouping autocomplete + details calls
@@ -52,14 +55,15 @@ export async function searchGooglePlaces(
   }
 
   try {
-    const maps = await waitForGoogleMaps()
+    const maps = await ensureGoogleMapsLoaded()
 
     // Build request options
-    const requestOptions: google.maps.places.FetchAutocompleteSuggestionsRequest = {
-      input: query,
-      includedPrimaryTypes: ['gym', 'sports_complex', 'sports_club'],
-      sessionToken: getSessionToken(),
-    }
+    const requestOptions: google.maps.places.FetchAutocompleteSuggestionsRequest =
+      {
+        input: query,
+        includedPrimaryTypes: ['gym', 'sports_complex', 'sports_club'],
+        sessionToken: getSessionToken(),
+      }
 
     // Add location bias if provided (from browser geolocation)
     if (location) {
@@ -71,7 +75,9 @@ export async function searchGooglePlaces(
 
     // Use new AutocompleteSuggestion API
     const { suggestions } =
-      await maps.places.AutocompleteSuggestion.fetchAutocompleteSuggestions(requestOptions)
+      await maps.places.AutocompleteSuggestion.fetchAutocompleteSuggestions(
+        requestOptions,
+      )
 
     // Debug: log response structure
     if (suggestions.length > 0) {
@@ -118,7 +124,7 @@ export async function getGooglePlaceDetails(
   placeId: string,
 ): Promise<GooglePlaceDetails> {
   try {
-    const maps = await waitForGoogleMaps()
+    const maps = await ensureGoogleMapsLoaded()
 
     // Create a new Place instance with the place ID
     const place = new maps.places.Place({
@@ -127,21 +133,34 @@ export async function getGooglePlaceDetails(
 
     // Fetch the required fields using the new API
     await place.fetchFields({
-      fields: ['id', 'displayName', 'formattedAddress', 'googleMapsURI', 'location'],
+      fields: [
+        'id',
+        'displayName',
+        'formattedAddress',
+        'googleMapsURI',
+        'location',
+      ],
     })
 
     // Clear session token after getting details
     clearSessionToken()
 
+    // Build Google Maps URL from coordinates if not provided
+    const lat = place.location?.lat() || 0
+    const lng = place.location?.lng() || 0
+    const mapsUrl =
+      place.googleMapsURI ||
+      `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`
+
     return {
       place_id: place.id || '',
       name: place.displayName || '',
       formatted_address: place.formattedAddress || '',
-      url: place.googleMapsURI || '',
+      url: mapsUrl,
       geometry: {
         location: {
-          lat: place.location?.lat() || 0,
-          lng: place.location?.lng() || 0,
+          lat,
+          lng,
         },
       },
     }
@@ -182,15 +201,22 @@ export const getGooglePlaceDetailsServer = createServerFn({ method: 'GET' })
 
     const data = await response.json()
 
+    // Build Google Maps URL from coordinates if not provided
+    const lat = data.location?.latitude || 0
+    const lng = data.location?.longitude || 0
+    const mapsUrl =
+      data.googleMapsUri ||
+      `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`
+
     return {
       place_id: data.id,
       name: data.displayName?.text || '',
       formatted_address: data.formattedAddress || '',
-      url: data.googleMapsUri || '',
+      url: mapsUrl,
       geometry: {
         location: {
-          lat: data.location?.latitude || 0,
-          lng: data.location?.longitude || 0,
+          lat,
+          lng,
         },
       },
     }

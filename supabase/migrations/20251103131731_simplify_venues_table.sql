@@ -1,35 +1,40 @@
--- Simplify venues table to only essential fields
--- Keep: id (PK), label (venue name), maps_url (Google Maps link)
+-- Simplified venues table storing only essential venue information
+-- This migration creates the venues table from scratch with minimal fields
 
--- Drop unused columns
-ALTER TABLE public.venues
-DROP COLUMN IF EXISTS formatted_address,
-DROP COLUMN IF EXISTS location,
-DROP COLUMN IF EXISTS google_place_id,
-DROP COLUMN IF EXISTS latitude,
-DROP COLUMN IF EXISTS longitude,
-DROP COLUMN IF EXISTS usage_count,
-DROP COLUMN IF EXISTS last_used_at;
+-- Create venues table with simplified schema
+CREATE TABLE IF NOT EXISTS public.venues (
+  id BIGSERIAL PRIMARY KEY,
+  label TEXT NOT NULL,
+  maps_url TEXT NOT NULL UNIQUE,
+  created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
 
--- Rename 'name' to 'label' for clarity
-ALTER TABLE public.venues
-RENAME COLUMN name TO label;
+-- Add RLS policies
+ALTER TABLE public.venues ENABLE ROW LEVEL SECURITY;
 
--- Rename 'google_maps_url' to 'maps_url' for simplicity
-ALTER TABLE public.venues
-RENAME COLUMN google_maps_url TO maps_url;
+-- Public read access
+CREATE POLICY "venues_public_select" ON public.venues
+  FOR SELECT
+  TO public
+  USING (true);
 
--- Ensure maps_url is required (can't be null)
-ALTER TABLE public.venues
-ALTER COLUMN maps_url SET NOT NULL;
+-- Organizers can manage venues
+CREATE POLICY "venues_organizer_insert" ON public.venues
+  FOR INSERT
+  TO authenticated
+  WITH CHECK ((auth.jwt() ->> 'user_role')::public.app_role = 'organizer');
 
--- Add unique constraint on maps_url to prevent duplicates
-ALTER TABLE public.venues
-ADD CONSTRAINT venues_maps_url_unique UNIQUE (maps_url);
+CREATE POLICY "venues_organizer_update" ON public.venues
+  FOR UPDATE
+  TO authenticated
+  USING ((auth.jwt() ->> 'user_role')::public.app_role = 'organizer');
 
--- Update RLS policies to match new schema (no changes needed, they work with any columns)
+CREATE POLICY "venues_organizer_delete" ON public.venues
+  FOR DELETE
+  TO authenticated
+  USING ((auth.jwt() ->> 'user_role')::public.app_role = 'organizer');
 
--- Add comment to table
+-- Add comments
 COMMENT ON TABLE public.venues IS 'Simplified venues table storing only essential venue information (label and maps URL)';
 COMMENT ON COLUMN public.venues.label IS 'Display name of the venue';
 COMMENT ON COLUMN public.venues.maps_url IS 'Google Maps URL for the venue (unique identifier)';

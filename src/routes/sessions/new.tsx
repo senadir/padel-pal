@@ -209,9 +209,10 @@ function NewSession() {
                     : undefined
                 }
                 onSelect={(place) => {
-                  // Update both fields in form state
+                  // Update all venue fields in form state
                   form.setFieldValue('venueName', place.name)
                   form.setFieldValue('venueLocation', place.location)
+                  form.setFieldValue('venuePlaceId', place.placeId)
                 }}
                 placeholder="Search for a padel venue..."
               />

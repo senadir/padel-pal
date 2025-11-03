@@ -12,7 +12,7 @@ export const getRecentVenues = createServerFn({ method: 'GET' }).handler(
 
     const { data: venues, error } = await supabase
       .from('venues')
-      .select('id, label, maps_url')
+      .select('id, label, maps_url, place_id')
       .order('created_at', { ascending: false })
       .limit(50) // Limit to 50 most recent venues
 
@@ -26,18 +26,20 @@ export const getRecentVenues = createServerFn({ method: 'GET' }).handler(
       id: venue.id.toString(),
       name: venue.label,
       source: 'database' as const,
-      googleMapsUrl: venue.maps_url,
+      googlePlaceId: venue.place_id || undefined,
+      googleMapsUrl: venue.maps_url || undefined,
     }))
   },
 )
 
 /**
- * Create venue (simplified schema: only label and maps_url)
+ * Create venue (simplified schema: label, maps_url, and place_id)
  * Uses upsert to avoid duplicates based on maps_url unique constraint
  */
 interface UpsertVenueInput {
   label: string
   mapsUrl: string
+  placeId?: string
 }
 
 export const upsertVenue = createServerFn({ method: 'POST' })
@@ -52,6 +54,7 @@ export const upsertVenue = createServerFn({ method: 'POST' })
         {
           label: data.label,
           maps_url: data.mapsUrl,
+          place_id: data.placeId || null,
         },
         {
           onConflict: 'maps_url',

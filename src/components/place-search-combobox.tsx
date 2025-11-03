@@ -3,6 +3,7 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import * as Ariakit from '@ariakit/react'
 import { matchSorter } from 'match-sorter'
 import { Loader2 } from 'lucide-react'
+import { Loader } from '@googlemaps/js-api-loader'
 import {
   searchGooglePlaces,
   getGooglePlaceDetails,
@@ -10,9 +11,46 @@ import {
 import { getRecentVenues } from '@/utils/venues'
 import type { PlaceSearchResult } from '@/utils/types'
 
+// Hook to load Google Maps using official Loader
+function useGoogleMapsScript() {
+  const [isLoaded, setIsLoaded] = useState(false)
+  const [error, setError] = useState<Error | null>(null)
+
+  useEffect(() => {
+    // Check if already loaded
+    if (typeof google !== 'undefined' && google.maps) {
+      setIsLoaded(true)
+      return
+    }
+
+    // Load using official Loader
+    const loader = new Loader({
+      apiKey: import.meta.env.VITE_GOOGLE_PLACES_API_KEY || '',
+      version: 'weekly',
+      libraries: ['places'],
+    })
+
+    loader
+      .load()
+      .then(() => {
+        setIsLoaded(true)
+      })
+      .catch((err) => {
+        console.error('Failed to load Google Maps:', err)
+        setError(new Error('Failed to load Google Maps'))
+      })
+  }, [])
+
+  return { isLoaded, error }
+}
+
 interface PlaceSearchComboboxProps {
-  value?: { name: string; location: string }
-  onSelect: (place: { name: string; location: string }) => void
+  value?: { name: string; location: string; placeId?: string }
+  onSelect: (place: {
+    name: string
+    location: string
+    placeId?: string
+  }) => void
   placeholder?: string
 }
 
@@ -67,6 +105,9 @@ export function PlaceSearchCombobox({
   const [searchValue, setSearchValue] = useState(value?.name || '')
   const debouncedSearch = useDebouncedValue(searchValue, 300)
 
+  // Load Google Maps script dynamically
+  const { isLoaded: mapsLoaded, error: mapsError } = useGoogleMapsScript()
+
   // Sync searchValue with external value prop
   useEffect(() => {
     if (value?.name) {
@@ -113,14 +154,18 @@ export function PlaceSearchCombobox({
           ),
       )
     },
-    enabled: debouncedSearch.length >= 3,
+    enabled: debouncedSearch.length >= 3 && mapsLoaded,
   })
 
   // Mutation: Get place details on selection
   const placeDetailsMutation = useMutation({
     mutationFn: getGooglePlaceDetails,
     onSuccess: (details, placeId) => {
-      onSelect({ name: details.name, location: details.url })
+      onSelect({
+        name: details.name,
+        location: details.url,
+        placeId: details.place_id,
+      })
       startTransition(() => {
         setSearchValue(details.name)
       })
@@ -151,10 +196,16 @@ export function PlaceSearchCombobox({
     ) {
       placeDetailsMutation.mutate(place.googlePlaceId)
     } else {
-      // Database venue with all details
+      // Database venue with all details - validate location exists
+      if (!place.googleMapsUrl) {
+        console.error('Venue missing Maps URL:', place)
+        return
+      }
+
       onSelect({
         name: place.name,
-        location: place.googleMapsUrl || '',
+        location: place.googleMapsUrl,
+        placeId: place.googlePlaceId,
       })
       startTransition(() => {
         setSearchValue(place.name)
@@ -164,9 +215,10 @@ export function PlaceSearchCombobox({
 
   // Derived state
   const displayVenues = searchValue.length === 0 ? allVenues : filteredVenues
-  const showGoogleResults = searchValue.length >= 3 && googleResults.length > 0
+  const showGoogleResults =
+    searchValue.length >= 3 && googleResults.length > 0 && mapsLoaded
   const isSearching = isSearchingGoogle || isLoadingVenues
-  const error = googleError || placeDetailsMutation.error
+  const error = googleError || placeDetailsMutation.error || mapsError
   const hasResults =
     displayVenues.length > 0 || showGoogleResults || isSearching
 

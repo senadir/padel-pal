@@ -27,6 +27,7 @@ export interface Match extends Option {
 export type SessionForm = {
   venueName: string
   venueLocation: string
+  venuePlaceId?: string
   date: Date
   levels: Array<string>
   timeBlocks: string

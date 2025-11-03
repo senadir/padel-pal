@@ -916,13 +916,14 @@ export const createSession = createServerFn({ method: 'POST' })
       const supabase = getSupabaseServerClient()
 
       // Save venue to database for future autocomplete
-      const { venueName, venueLocation } = data
+      const { venueName, venueLocation, venuePlaceId } = data
       if (venueName && venueLocation) {
         try {
           await upsertVenue({
             data: {
               label: venueName,
               mapsUrl: venueLocation,
+              placeId: venuePlaceId,
             },
           })
         } catch (error) {

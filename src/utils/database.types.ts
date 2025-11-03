@@ -294,18 +294,21 @@ export type Database = {
           id: number
           label: string | null
           maps_url: string | null
+          place_id: string
         }
         Insert: {
           created_at?: string | null
           id?: number
           label?: string | null
           maps_url?: string | null
+          place_id: string
         }
         Update: {
           created_at?: string | null
           id?: number
           label?: string | null
           maps_url?: string | null
+          place_id?: string
         }
         Relationships: []
       }
