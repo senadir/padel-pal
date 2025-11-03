@@ -11,7 +11,17 @@ import { useSuspenseQuery } from '@tanstack/react-query'
 import { sessionsQueryOptions } from '@/utils/sessions'
 import { format, isBefore } from 'date-fns'
 import { Button } from '@/components/ui/button'
+<<<<<<< HEAD
 import { ChevronRight, CalendarPlus } from 'lucide-react'
+=======
+import {
+  ChevronRight,
+  CalendarPlus,
+  Bell,
+  ArrowUpRightIcon,
+} from 'lucide-react'
+// Removed unused imports from '@/components/ui/card'
+>>>>>>> 8f3aee5 (Update src/routes/index.tsx)
 import {
   Empty,
   EmptyContent,
