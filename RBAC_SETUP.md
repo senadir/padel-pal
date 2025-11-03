@@ -15,7 +15,7 @@ Unlike storing roles directly on the `players` table, this implementation follow
 - **JWT hook function**: Adds the user's highest privilege role to JWT tokens
 - **RLS policies**: Check the `user_role` claim from JWT tokens
 
-##What's Already Done
+## What's Already Done
 
 ✅ **Database schema created**:
 - `app_role` enum type with `'player'` and `'organizer'` values
