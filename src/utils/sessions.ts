@@ -637,17 +637,18 @@ export const useVoteForSession = ({
         // Remove votes from other levels in same time slot first
         const otherOptionsInSlot =
           slot?.options.filter((o) => o.level !== variables.level) || []
-        for (const otherOption of otherOptionsInSlot) {
-          if (otherOption.players.some((p) => p.id === currentUser.id)) {
-            await unvoteForOption({
+        const unvotePromises = otherOptionsInSlot
+          .filter((otherOption) => otherOption.players.some((p) => p.id === currentUser.id))
+          .map((otherOption) =>
+            unvoteForOption({
               data: {
                 sessionPublicId: sessionId,
                 optionId: otherOption.id,
                 playerId: currentUser.id,
               },
             })
-          }
-        }
+          )
+        await Promise.all(unvotePromises)
 
         // Vote for the new option
         await voteForOption({
