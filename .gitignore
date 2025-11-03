@@ -15,4 +15,4 @@ todos.json
 .netlify
 
 # Tanstack Start related files
-src/routeTree.gen.ts
+src/routeTree.gen.tsdocs/

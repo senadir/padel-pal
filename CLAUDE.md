@@ -89,6 +89,7 @@ Multi-step authentication using Supabase phone OTP via WhatsApp:
 - **Environment variables**:
   - `VITE_SUPABASE_URL`
   - `VITE_SUPABASE_PUBLIC_KEY`
+  - `VITE_GOOGLE_PLACES_API_KEY`: Google Places API key for venue search
 
 #### Database Schema
 
@@ -166,9 +167,19 @@ Multi-step authentication using Supabase phone OTP via WhatsApp:
    - **Constraint**: UNIQUE(user_id, role) - prevents duplicate role assignments
    - **Note**: Users can have multiple roles; highest privilege role is used in JWT
 
+8. **`venues`** - Simplified venue storage for autocomplete
+   - `id` (BIGSERIAL, PK): Venue ID
+   - `label` (TEXT): Venue display name
+   - `maps_url` (TEXT): Google Maps URL (used as unique identifier)
+   - `place_id` (TEXT, NOT NULL, UNIQUE): Google Place ID (used as unique identifier)
+   - `created_at` (TIMESTAMPTZ): Record creation timestamp
+   - **Note**: Simplified to only essential fields; automatically populated when sessions are created
+   - **Constraint**: UNIQUE(place_id) prevents duplicate venues
+
 **Row Level Security (RLS) Policies:**
 
 All tables have RLS enabled. The general pattern is:
+
 - **Public SELECT**: All data is publicly viewable (anonymous + authenticated users)
 - **User operations**: Authenticated users can manage their own records
 - **Organizer operations**: Users with 'organizer' role can manage all records
@@ -223,12 +234,14 @@ The app implements RBAC using Supabase's custom JWT claims feature following the
 - **RLS policies**: Check JWT claim `(auth.jwt() ->> 'user_role')::app_role`
 
 **Roles:**
+
 - **`player`** (default): Standard user with voting and match participation rights
 - **`organizer`**: Admin user with full session and match management capabilities
 
 **Setup Requirements:**
 
 The JWT hook function exists in the database but **must be registered manually** in the Supabase Dashboard:
+
 1. Navigate to **Authentication > Hooks**
 2. Enable **"Custom Access Token"** hook
 3. Select function: `public.custom_access_token_hook`

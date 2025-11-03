@@ -1,4 +1,5 @@
 import { createFileRoute, redirect, useRouter } from '@tanstack/react-router'
+import { useQueryClient } from '@tanstack/react-query'
 import { addMinutes, format, isAfter, parse } from 'date-fns'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -33,6 +34,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { formOptions, useForm } from '@tanstack/react-form'
 import { createSession, createSessionValidator } from '@/utils/sessions'
 import type { SessionForm } from '@/utils/types'
+import { PlaceSearchCombobox } from '@/components/place-search-combobox'
 
 const defaultSession: SessionForm = {
   venueName: '',
@@ -43,6 +45,7 @@ const defaultSession: SessionForm = {
     date.setHours(16, 0, 0, 0)
     return date
   })(),
+  votingClosesAt: undefined,
   levels: ['beginner', 'improver', 'intermediate'],
   timeBlocks: '60',
   timeSlots: [
@@ -70,7 +73,6 @@ const defaultSession: SessionForm = {
   ],
   limitPlayers: false,
   playersPerSlot: 4,
-  votingClosesAt: undefined,
 }
 
 export const Route = createFileRoute('/sessions/new')({
@@ -110,6 +112,8 @@ export const Route = createFileRoute('/sessions/new')({
 
 function NewSession() {
   const router = useRouter()
+  const queryClient = useQueryClient()
+
   const sessionFormOptions = formOptions({
     defaultValues: defaultSession,
     validators: {
@@ -119,7 +123,10 @@ function NewSession() {
       try {
         const sessionId = await createSession({ data: value })
 
-        // TODO: Navigae to the session page or sessions list
+        // Invalidate venues query to refresh the list with the newly added venue
+        await queryClient.invalidateQueries({ queryKey: ['venues'] })
+
+        // Navigate to the session page
         router.navigate({
           to: '/sessions/$id',
           params: { id: sessionId },
@@ -187,49 +194,33 @@ function NewSession() {
             Fill in the form below to create a new session
           </FieldLegend>
         </div>
-        <form.Field
-          name="venueName"
-          children={(field) => {
-            const isInvalid =
-              field.state.meta.isTouched && !field.state.meta.isValid
-            return (
-              <Field data-invalid={isInvalid}>
-                <FieldLabel htmlFor={field.name}>Venue Name</FieldLabel>
-                <Input
-                  id={field.name}
-                  name={field.name}
-                  value={field.state.value}
-                  onBlur={field.handleBlur}
-                  onChange={(e) => field.handleChange(e.target.value)}
-                  aria-invalid={isInvalid}
-                  placeholder="Aurial Pàdel Cornellà"
-                />
-                {isInvalid && <FieldError errors={field.state.meta.errors} />}
-              </Field>
-            )
-          }}
-        />
-        <form.Field
-          name="venueLocation"
-          children={(field) => {
-            const isInvalid =
-              field.state.meta.isTouched && !field.state.meta.isValid
-            return (
-              <Field data-invalid={isInvalid}>
-                <FieldLabel htmlFor={field.name}>Venue Location</FieldLabel>
-                <Input
-                  id={field.name}
-                  name={field.name}
-                  value={field.state.value}
-                  onBlur={field.handleBlur}
-                  onChange={(e) => field.handleChange(e.target.value)}
-                  aria-invalid={isInvalid}
-                  placeholder="https://maps.app.goo.gl/1234567890"
-                />
-                {isInvalid && <FieldError errors={field.state.meta.errors} />}
-              </Field>
-            )
-          }}
+        <form.Subscribe
+          selector={(state) => ({
+            venueName: state.values.venueName,
+            venueLocation: state.values.venueLocation,
+          })}
+          children={({ venueName, venueLocation }) => (
+            <Field>
+              <FieldLabel htmlFor="venue">Venue</FieldLabel>
+              <PlaceSearchCombobox
+                value={
+                  venueName
+                    ? { name: venueName, location: venueLocation }
+                    : undefined
+                }
+                onSelect={(place) => {
+                  // Update all venue fields in form state
+                  form.setFieldValue('venueName', place.name)
+                  form.setFieldValue('venueLocation', place.location)
+                  form.setFieldValue('venuePlaceId', place.placeId)
+                }}
+                placeholder="Search for a padel venue..."
+              />
+              <FieldDescription>
+                Search for a venue or select from previously used locations.
+              </FieldDescription>
+            </Field>
+          )}
         />
         <form.Field
           name="date"

@@ -27,7 +27,11 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { matchQueryOptions, sessionQueryOptions, useMatchActions } from '@/utils/sessions'
+import {
+  matchQueryOptions,
+  sessionQueryOptions,
+  useMatchActions,
+} from '@/utils/sessions'
 import { useAuth } from '@/contexts/auth'
 import {
   Collapsible,
@@ -85,12 +89,17 @@ function RouteComponent() {
 
   // Check if user is fully authenticated
   const currentUser = authData?.player
-  const isFullyAuthenticated = !!(authData?.user && authData.isPhoneVerified && authData.hasPlaytomicProfile)
+  const isFullyAuthenticated = !!(
+    authData?.user &&
+    authData.isPhoneVerified &&
+    authData.hasPlaytomicProfile
+  )
 
-  const { toggleMatchParticipation: toggleMatchParticipationFn, isLoading } = useMatchActions({
-    sessionId: id,
-    currentUserId: currentUser?.id || '',
-  })
+  const { toggleMatchParticipation: toggleMatchParticipationFn, isLoading } =
+    useMatchActions({
+      sessionId: id,
+      currentUserId: currentUser?.id || '',
+    })
 
   // CHANGE: Wrap match participation to check authentication before allowing join/unjoin
   // This enables public viewing of matches while requiring auth for interactions
@@ -389,7 +398,9 @@ const PlayerListItem = ({
     <div className="flex items-center gap-3">
       <Avatar className="size-8">
         <AvatarImage src={player.avatar} alt={player.name} />
-        <AvatarFallback delayMs={700}>{player.name?.charAt(0) || '?'}</AvatarFallback>
+        <AvatarFallback delayMs={700}>
+          {player.name?.charAt(0) || '?'}
+        </AvatarFallback>
       </Avatar>
       <div className="min-w-0 flex-1">
         <div className="truncate font-medium">{player.name}</div>

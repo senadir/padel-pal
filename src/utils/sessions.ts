@@ -20,6 +20,7 @@ import {
 import { getMockSession } from './mock'
 import { getSupabaseServerClient } from './supabase'
 import type { Match, Player, Session, SessionForm } from './types'
+import { upsertVenue } from './venues'
 
 export const fetchSessions = createServerFn({ method: 'GET' }).handler(
   async () => {
@@ -638,7 +639,9 @@ export const useVoteForSession = ({
         const otherOptionsInSlot =
           slot?.options.filter((o) => o.level !== variables.level) || []
         const unvotePromises = otherOptionsInSlot
-          .filter((otherOption) => otherOption.players.some((p) => p.id === currentUser.id))
+          .filter((otherOption) =>
+            otherOption.players.some((p) => p.id === currentUser.id),
+          )
           .map((otherOption) =>
             unvoteForOption({
               data: {
@@ -646,7 +649,7 @@ export const useVoteForSession = ({
                 optionId: otherOption.id,
                 playerId: currentUser.id,
               },
-            })
+            }),
           )
         await Promise.all(unvotePromises)
 
@@ -911,6 +914,23 @@ export const createSession = createServerFn({ method: 'POST' })
   .handler(async ({ data }: { data: SessionForm }): Promise<string> => {
     try {
       const supabase = getSupabaseServerClient()
+
+      // Save venue to database for future autocomplete
+      const { venueName, venueLocation, venuePlaceId } = data
+      if (venueName && venueLocation) {
+        try {
+          await upsertVenue({
+            data: {
+              label: venueName,
+              mapsUrl: venueLocation,
+              placeId: venuePlaceId,
+            },
+          })
+        } catch (error) {
+          // Log error but don't fail session creation
+          console.error('Error saving venue:', error)
+        }
+      }
 
       // Generate unique session ID
       const uid = new ShortUniqueId({ length: 8 })
