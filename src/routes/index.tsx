@@ -17,13 +17,7 @@ import {
   Bell,
   ArrowUpRightIcon,
 } from 'lucide-react'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
+// Removed unused imports from '@/components/ui/card'
 import {
   Empty,
   EmptyContent,
