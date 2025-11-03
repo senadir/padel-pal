@@ -17,8 +17,6 @@ import { ChevronRight, CalendarPlus } from 'lucide-react'
 import {
   ChevronRight,
   CalendarPlus,
-  Bell,
-  ArrowUpRightIcon,
 } from 'lucide-react'
 // Removed unused imports from '@/components/ui/card'
 >>>>>>> 8f3aee5 (Update src/routes/index.tsx)
