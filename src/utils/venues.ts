@@ -3,8 +3,8 @@ import { getSupabaseServerClient } from './supabase'
 import type { PlaceSearchResult } from './types'
 
 /**
- * Get all venues sorted by usage and recency
- * Client will handle filtering during search
+ * Get all recently used venues
+ * Returns venues ordered by most recently created (newest first)
  */
 export const getRecentVenues = createServerFn({ method: 'GET' }).handler(
   async (): Promise<PlaceSearchResult[]> => {
@@ -12,9 +12,9 @@ export const getRecentVenues = createServerFn({ method: 'GET' }).handler(
 
     const { data: venues, error } = await supabase
       .from('venues')
-      .select('*')
-      .order('usage_count', { ascending: false })
-      .order('last_used_at', { ascending: false })
+      .select('id, label, maps_url')
+      .order('created_at', { ascending: false })
+      .limit(50) // Limit to 50 most recent venues
 
     if (error) {
       console.error('Error fetching venues:', error)
@@ -23,28 +23,22 @@ export const getRecentVenues = createServerFn({ method: 'GET' }).handler(
 
     // Transform to PlaceSearchResult format
     return (venues || []).map((venue) => ({
-      id: venue.google_place_id || venue.id.toString(),
-      name: venue.name,
-      address: venue.formatted_address,
+      id: venue.id.toString(),
+      name: venue.label,
+      address: '', // No address in simplified schema
       source: 'database' as const,
-      googlePlaceId: venue.google_place_id || undefined,
-      googleMapsUrl: venue.google_maps_url || undefined,
-      latitude: venue.latitude ? Number(venue.latitude) : undefined,
-      longitude: venue.longitude ? Number(venue.longitude) : undefined,
+      googleMapsUrl: venue.maps_url,
     }))
   },
 )
 
 /**
- * Create or update venue (increments usage_count if exists)
+ * Create venue (simplified schema: only label and maps_url)
+ * Uses upsert to avoid duplicates based on maps_url unique constraint
  */
 interface UpsertVenueInput {
-  name: string
-  formattedAddress: string
-  googlePlaceId?: string
-  googleMapsUrl?: string
-  latitude?: number
-  longitude?: number
+  label: string
+  mapsUrl: string
 }
 
 export const upsertVenue = createServerFn({ method: 'POST' })
@@ -52,50 +46,38 @@ export const upsertVenue = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     const supabase = getSupabaseServerClient()
 
-    // Check if venue with this place_id already exists
-    if (data.googlePlaceId) {
-      const { data: existing } = await supabase
-        .from('venues')
-        .select('id, usage_count')
-        .eq('google_place_id', data.googlePlaceId)
-        .single()
-
-      if (existing) {
-        // Update usage count and last_used_at
-        const { error } = await supabase
-          .from('venues')
-          .update({
-            usage_count: existing.usage_count + 1,
-            last_used_at: new Date().toISOString(),
-          })
-          .eq('id', existing.id)
-
-        if (error) {
-          throw new Error(`Failed to update venue: ${error.message}`)
-        }
-
-        return { id: existing.id }
-      }
-    }
-
-    // Insert new venue
-    const { data: newVenue, error } = await supabase
+    // Upsert venue (insert or ignore if maps_url already exists)
+    const { data: venue, error } = await supabase
       .from('venues')
-      .insert({
-        name: data.name,
-        formatted_address: data.formattedAddress,
-        location: data.formattedAddress, // Keep legacy field populated
-        google_place_id: data.googlePlaceId,
-        google_maps_url: data.googleMapsUrl,
-        latitude: data.latitude,
-        longitude: data.longitude,
-      })
+      .upsert(
+        {
+          label: data.label,
+          maps_url: data.mapsUrl,
+        },
+        {
+          onConflict: 'maps_url',
+          ignoreDuplicates: true, // Don't error if venue already exists
+        },
+      )
       .select('id')
       .single()
 
     if (error) {
-      throw new Error(`Failed to create venue: ${error.message}`)
+      // If ignoreDuplicates is true and venue exists, we get null data but no error
+      // In that case, fetch the existing venue
+      if (!venue) {
+        const { data: existing } = await supabase
+          .from('venues')
+          .select('id')
+          .eq('maps_url', data.mapsUrl)
+          .single()
+
+        if (existing) {
+          return { id: existing.id }
+        }
+      }
+      throw new Error(`Failed to upsert venue: ${error.message}`)
     }
 
-    return { id: newVenue.id }
+    return { id: venue?.id }
   })

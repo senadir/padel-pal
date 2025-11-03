@@ -21,7 +21,6 @@ import { getMockSession } from './mock'
 import { getSupabaseServerClient } from './supabase'
 import type { Match, Player, Session, SessionForm } from './types'
 import { upsertVenue } from './venues'
-import { getGooglePlaceDetailsServer } from './google-places'
 
 export const fetchSessions = createServerFn({ method: 'GET' }).handler(
   async () => {
@@ -916,36 +915,16 @@ export const createSession = createServerFn({ method: 'POST' })
     try {
       const supabase = getSupabaseServerClient()
 
-      // Extract venue info and save to database
+      // Save venue to database for future autocomplete
       const { venueName, venueLocation } = data
-
-      // If venue has a Google Place ID (from URL), fetch full details and save
-      if (venueLocation) {
+      if (venueName && venueLocation) {
         try {
-          // Extract place_id from Google Maps URL if present
-          // Patterns: https://maps.app.goo.gl/... or https://www.google.com/maps/place/...
-          const placeIdMatch =
-            venueLocation.match(/place\/([^\\/]+)/) ||
-            venueLocation.match(/\?.*[&?]q=place_id:([^&]+)/)
-
-          if (placeIdMatch && placeIdMatch[1]) {
-            const placeId = placeIdMatch[1]
-
-            // Fetch full details from Google
-            const placeDetails = await getGooglePlaceDetailsServer({ data: placeId })
-
-            // Save to venues table
-            await upsertVenue({
-              data: {
-                name: placeDetails.name,
-                formattedAddress: placeDetails.formatted_address,
-                googlePlaceId: placeDetails.place_id,
-                googleMapsUrl: placeDetails.url,
-                latitude: placeDetails.geometry.location.lat,
-                longitude: placeDetails.geometry.location.lng,
-              },
-            })
-          }
+          await upsertVenue({
+            data: {
+              label: venueName,
+              mapsUrl: venueLocation,
+            },
+          })
         } catch (error) {
           // Log error but don't fail session creation
           console.error('Error saving venue:', error)

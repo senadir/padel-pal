@@ -167,20 +167,13 @@ Multi-step authentication using Supabase phone OTP via WhatsApp:
    - **Constraint**: UNIQUE(user_id, role) - prevents duplicate role assignments
    - **Note**: Users can have multiple roles; highest privilege role is used in JWT
 
-8. **`venues`** - Previously used venue locations
+8. **`venues`** - Simplified venue storage for autocomplete
    - `id` (BIGSERIAL, PK): Venue ID
-   - `name` (TEXT, NOT NULL): Venue display name
-   - `formatted_address` (TEXT, NOT NULL): Full address from Google Places
-   - `location` (TEXT): Legacy field (kept for compatibility)
-   - `google_place_id` (TEXT, UNIQUE): Google Places ID for deduplication
-   - `google_maps_url` (TEXT): Google Maps link
-   - `latitude` (NUMERIC(10, 7)): Latitude coordinate
-   - `longitude` (NUMERIC(10, 7)): Longitude coordinate
-   - `usage_count` (INT, DEFAULT 1): Track popularity
-   - `last_used_at` (TIMESTAMPTZ): For sorting recent venues
+   - `label` (TEXT, NOT NULL): Venue display name
+   - `maps_url` (TEXT, NOT NULL, UNIQUE): Google Maps URL (used as unique identifier)
    - `created_at` (TIMESTAMPTZ): Record creation timestamp
-   - `updated_at` (TIMESTAMPTZ): Last update timestamp
-   - **Indexes**: On `google_place_id` and `(usage_count DESC, last_used_at DESC)`
+   - **Note**: Simplified to only essential fields; automatically populated when sessions are created
+   - **Constraint**: UNIQUE(maps_url) prevents duplicate venues
 
 **Row Level Security (RLS) Policies:**
 

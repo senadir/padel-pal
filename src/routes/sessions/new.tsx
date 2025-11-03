@@ -1,4 +1,5 @@
 import { createFileRoute, redirect, useRouter } from '@tanstack/react-router'
+import { useQueryClient } from '@tanstack/react-query'
 import { addMinutes, format, isAfter, parse } from 'date-fns'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -111,6 +112,8 @@ export const Route = createFileRoute('/sessions/new')({
 
 function NewSession() {
   const router = useRouter()
+  const queryClient = useQueryClient()
+
   const sessionFormOptions = formOptions({
     defaultValues: defaultSession,
     validators: {
@@ -120,7 +123,10 @@ function NewSession() {
       try {
         const sessionId = await createSession({ data: value })
 
-        // TODO: Navigae to the session page or sessions list
+        // Invalidate venues query to refresh the list with the newly added venue
+        await queryClient.invalidateQueries({ queryKey: ['venues'] })
+
+        // Navigate to the session page
         router.navigate({
           to: '/sessions/$id',
           params: { id: sessionId },
