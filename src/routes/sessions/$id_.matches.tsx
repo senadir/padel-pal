@@ -27,7 +27,8 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { matchQueryOptions, sessionQueryOptions } from '@/utils/sessions'
+import { matchQueryOptions, sessionQueryOptions, useMatchActions } from '@/utils/sessions'
+import { useAuth } from '@/contexts/auth'
 import {
   Collapsible,
   CollapsibleContent,
@@ -80,6 +81,38 @@ function RouteComponent() {
   const { mine, matchId } = Route.useSearch()
   const { data: matches } = useSuspenseQuery(matchQueryOptions(id))
   const navigate = useNavigate({ from: Route.fullPath })
+  const { authData } = useAuth()
+
+  // Check if user is fully authenticated
+  const currentUser = authData?.player
+  const isFullyAuthenticated = !!(authData?.user && authData.isPhoneVerified && authData.hasPlaytomicProfile)
+
+  const { toggleMatchParticipation: toggleMatchParticipationFn, isLoading } = useMatchActions({
+    sessionId: id,
+    currentUserId: currentUser?.id || '',
+  })
+
+  // CHANGE: Wrap match participation to check authentication before allowing join/unjoin
+  // This enables public viewing of matches while requiring auth for interactions
+  const toggleMatchParticipation = (matchId: string, isJoined: boolean) => {
+    if (!isFullyAuthenticated) {
+      // Store return URL for after login - user will come back here after auth
+      const returnUrl = `/sessions/${id}/matches`
+
+      // Redirect to appropriate login step based on auth state
+      // The redirect parameter will be propagated through the entire auth flow
+      if (!authData?.user) {
+        navigate({ to: '/login', search: { redirect: returnUrl } })
+      } else if (!authData.isPhoneVerified) {
+        navigate({ to: '/login/otp', search: { redirect: returnUrl } })
+      } else if (!authData.hasPlaytomicProfile) {
+        navigate({ to: '/login/playtomic', search: { redirect: returnUrl } })
+      }
+      return
+    }
+    // User is fully authenticated, proceed with joining/unjoining match
+    toggleMatchParticipationFn(matchId, isJoined)
+  }
 
   // Group matches by timeSlot and level
   const groupedMatches: Record<string, Record<string, Array<Match>>> = {}
@@ -140,7 +173,13 @@ function RouteComponent() {
                 />
                 <div className="flex flex-col gap-4">
                   {ms.map((match) => (
-                    <MatchSlot key={match.id} match={match} />
+                    <MatchSlot
+                      key={match.id}
+                      match={match}
+                      currentUser={currentUser}
+                      onToggleParticipation={toggleMatchParticipation}
+                      isLoading={isLoading}
+                    />
                   ))}
                 </div>
               </div>
@@ -218,12 +257,27 @@ function RouteComponent() {
 
 const MatchSlot = ({
   match,
+  currentUser,
+  onToggleParticipation,
+  isLoading,
   defaultOpen = false,
 }: {
   match: Match
+  currentUser: Player | null | undefined
+  onToggleParticipation: (matchId: string, isJoined: boolean) => void
+  isLoading: boolean
   defaultOpen?: boolean
 }) => {
   const [open, setOpen] = useState(defaultOpen)
+  const isCurrentUserInMatch = match.players.some(
+    (player) => player.id === currentUser?.id,
+  )
+
+  const handleSlotClick = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    onToggleParticipation(match.id, isCurrentUserInMatch)
+  }
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
       <Item variant="outline" size="default">
@@ -235,7 +289,7 @@ const MatchSlot = ({
                   <Avatar key={player.id} className="size-6">
                     <AvatarImage src={player.avatar} alt={player.name} />
                     <AvatarFallback delayMs={700}>
-                      {player.name.charAt(0)}
+                      {player.name?.charAt(0) || '?'}
                     </AvatarFallback>
                   </Avatar>
                 ))}
@@ -269,40 +323,52 @@ const MatchSlot = ({
         {open && (
           <ItemContent>
             <CollapsibleContent>
-              <Link
-                className="grid grid-cols-2 gap-2"
-                to="."
-                replace
-                search={{ matchId: match.id }}
-              >
-                {match.players.map((player: Player) => (
-                  <div className="flex gap-2 items-center">
-                    <Avatar key={player.id} className="size-8">
-                      <AvatarImage src={player.avatar} alt={player.name} />
-                      <AvatarFallback delayMs={700}>
-                        {player.name.charAt(0)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="text-sm font-medium">{player.name}</div>
-                  </div>
-                ))}
+              <div className="grid grid-cols-2 gap-2">
+                {match.players.map((player: Player) => {
+                  const isCurrentUser = currentUser?.id === player.id
+                  return (
+                    <button
+                      key={player.id}
+                      onClick={isCurrentUser ? handleSlotClick : undefined}
+                      disabled={isLoading || !isCurrentUser}
+                      className={`flex gap-2 items-center ${
+                        isCurrentUser
+                          ? 'cursor-pointer hover:opacity-80 transition-opacity'
+                          : 'cursor-default'
+                      }`}
+                    >
+                      <Avatar className="size-8">
+                        <AvatarImage src={player.avatar} alt={player.name} />
+                        <AvatarFallback delayMs={700}>
+                          {player.name?.charAt(0) || '?'}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="text-sm font-medium">
+                        {player.name}
+                        {isCurrentUser && ' (You)'}
+                      </div>
+                    </button>
+                  )
+                })}
                 {match.players.length < 4 &&
                   Array.from({ length: 4 - match.players.length }).map(
                     (_, i) => (
-                      <div
+                      <button
                         key={`empty-${i}`}
-                        className="flex gap-2 items-center"
+                        onClick={handleSlotClick}
+                        disabled={isLoading}
+                        className="flex gap-2 items-center cursor-pointer hover:opacity-80 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <div className="size-8 flex items-center justify-center rounded-full border-1 border-dashed border">
                           <PlusIcon className="size-4 text-muted-foreground" />
                         </div>
                         <span className="text-muted-foreground text-sm">
-                          Empty
+                          {isLoading ? 'Loading...' : 'Click to join'}
                         </span>
-                      </div>
+                      </button>
                     ),
                   )}
-              </Link>
+              </div>
             </CollapsibleContent>
           </ItemContent>
         )}
@@ -323,7 +389,7 @@ const PlayerListItem = ({
     <div className="flex items-center gap-3">
       <Avatar className="size-8">
         <AvatarImage src={player.avatar} alt={player.name} />
-        <AvatarFallback delayMs={700}>{player.name.charAt(0)}</AvatarFallback>
+        <AvatarFallback delayMs={700}>{player.name?.charAt(0) || '?'}</AvatarFallback>
       </Avatar>
       <div className="min-w-0 flex-1">
         <div className="truncate font-medium">{player.name}</div>

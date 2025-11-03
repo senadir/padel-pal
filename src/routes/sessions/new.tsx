@@ -1,4 +1,4 @@
-import { createFileRoute, useRouter } from '@tanstack/react-router'
+import { createFileRoute, redirect, useRouter } from '@tanstack/react-router'
 import { addMinutes, format, isAfter, parse } from 'date-fns'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -27,7 +27,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import { DatePicker } from '@/components/ui/date-picker'
+import { DateTimePicker } from '@/components/ui/datetime-picker'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { formOptions, useForm } from '@tanstack/react-form'
@@ -37,8 +37,12 @@ import type { SessionForm } from '@/utils/types'
 const defaultSession: SessionForm = {
   venueName: '',
   venueLocation: '',
-  date: new Date(new Date().setDate(new Date().getDate() + 7)),
-  time: parse('16:00', 'HH:mm', new Date()),
+  date: (() => {
+    const date = new Date()
+    date.setDate(date.getDate() + 7)
+    date.setHours(16, 0, 0, 0)
+    return date
+  })(),
   levels: ['beginner', 'improver', 'intermediate'],
   timeBlocks: '60',
   timeSlots: [
@@ -66,9 +70,34 @@ const defaultSession: SessionForm = {
   ],
   limitPlayers: false,
   playersPerSlot: 4,
+  votingClosesAt: undefined,
 }
 
 export const Route = createFileRoute('/sessions/new')({
+  beforeLoad: async ({ context, location }) => {
+    const { authData } = context
+
+    // Check if user is authenticated
+    if (!authData?.user) {
+      throw redirect({
+        to: '/login',
+        search: {
+          redirect: location.href,
+        },
+      })
+    }
+
+    // Check if user is an organizer
+    if (authData.role !== 'organizer') {
+      throw redirect({
+        to: '/',
+        search: {
+          error: 'unauthorized',
+          message: 'Only organizers can create sessions',
+        },
+      })
+    }
+  },
   component: NewSession,
   head: () => ({
     meta: [
@@ -115,12 +144,14 @@ function NewSession() {
   const form = useForm(sessionFormOptions)
 
   // Generate time slots based on session time and time blocks
-  const generateTimeSlots = (time: Date, timeBlocks: number) => {
+  const generateTimeSlots = (date: Date, timeBlocks: number) => {
     const slots: SessionForm['timeSlots'] = []
 
-    // Set the maximum end time to 11:00 PM
-    const maxEndTime = parse('23:00', 'HH:mm', new Date())
-    let currentTime = time
+    // Set the maximum end time to 11:00 PM on the same day as the input date
+    const maxEndTime = new Date(date)
+    maxEndTime.setHours(23, 0, 0, 0)
+
+    let currentTime = new Date(date)
 
     // Generate slots until 11 PM
     while (true) {
@@ -133,9 +164,9 @@ function NewSession() {
 
       slots.push({
         id: format(currentTime, 'HH:mm') + '-' + format(endTime, 'HH:mm'),
-        range: [currentTime, endTime],
+        range: [new Date(currentTime), new Date(endTime)],
       })
-      currentTime = addMinutes(currentTime, timeBlocks)
+      currentTime = endTime
     }
 
     return slots
@@ -200,73 +231,49 @@ function NewSession() {
             )
           }}
         />
-        <FieldGroup className="grid grid-cols-2 gap-3">
-          <form.Field
-            name="date"
-            children={(field) => {
-              const isInvalid =
-                field.state.meta.isTouched && !field.state.meta.isValid
-              return (
-                <Field data-invalid={isInvalid}>
-                  <FieldLabel htmlFor={field.name}>Session Date</FieldLabel>
-                  <DatePicker
-                    label="Select date"
-                    value={field.state.value}
-                    setValue={(value) => field.handleChange(value)}
-                    ariaInvalid={isInvalid}
-                  />
-                  {isInvalid && <FieldError errors={field.state.meta.errors} />}
-                </Field>
-              )
-            }}
-          />
-          <form.Field
-            name="time"
-            children={(field) => {
-              const isInvalid =
-                field.state.meta.isTouched && !field.state.meta.isValid
-              return (
-                <Field data-invalid={isInvalid}>
-                  <FieldLabel htmlFor={field.name}>Session Time</FieldLabel>
-                  <Input
-                    type="time"
-                    id={field.name}
-                    min="07:00"
-                    max="21:00"
-                    step="1800"
-                    value={format(field.state.value, 'HH:mm')}
-                    aria-invalid={isInvalid}
-                    onChange={(e) => {
-                      const parsedTime = parse(
-                        e.target.value,
-                        'HH:mm',
-                        new Date(),
-                      )
-                      // Only proceed if the parsed time is a valid Date
-                      if (!isNaN(parsedTime.getTime())) {
-                        // Round up to the nearest half hour
-                        let minutes = parsedTime.getMinutes()
-                        let hours = parsedTime.getHours()
-                        if (minutes > 0 && minutes <= 30) {
-                          minutes = 30
-                        } else if (minutes > 30) {
-                          hours += 1
-                          minutes = 0
-                        }
-                        const roundedTime = new Date(parsedTime)
-                        roundedTime.setHours(hours)
-                        roundedTime.setMinutes(minutes)
-                        field.handleChange(roundedTime)
-                      }
-                    }}
-                    className="bg-background appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-calendar-picker-indicator]:appearance-none"
-                  />
-                  {isInvalid && <FieldError errors={field.state.meta.errors} />}
-                </Field>
-              )
-            }}
-          />
-        </FieldGroup>
+        <form.Field
+          name="date"
+          children={(field) => {
+            const isInvalid =
+              field.state.meta.isTouched && !field.state.meta.isValid
+            return (
+              <Field data-invalid={isInvalid}>
+                <FieldLabel htmlFor={field.name}>
+                  Session Date & Time
+                </FieldLabel>
+                <DateTimePicker
+                  value={field.state.value}
+                  setValue={(value) => field.handleChange(value)}
+                />
+                {isInvalid && <FieldError errors={field.state.meta.errors} />}
+              </Field>
+            )
+          }}
+        />
+        <form.Field
+          name="votingClosesAt"
+          children={(field) => {
+            const isInvalid =
+              field.state.meta.isTouched && !field.state.meta.isValid
+            return (
+              <Field data-invalid={isInvalid}>
+                <FieldLabel htmlFor={field.name}>
+                  Voting Deadline (Optional)
+                </FieldLabel>
+                <DateTimePicker
+                  value={field.state.value}
+                  setValue={(value) => field.handleChange(value)}
+                  showClearButton={true}
+                  onClear={() => field.handleChange(undefined)}
+                />
+                <FieldDescription>
+                  Set a deadline for when voting closes.
+                </FieldDescription>
+                {isInvalid && <FieldError errors={field.state.meta.errors} />}
+              </Field>
+            )
+          }}
+        />
         <FieldSeparator />
         <form.Field
           name="timeBlocks"
@@ -380,10 +387,10 @@ function NewSession() {
         />
         <form.Subscribe
           selector={(state) => ({
-            time: state.values.time,
+            date: state.values.date,
             timeBlocks: state.values.timeBlocks,
           })}
-          children={({ time, timeBlocks }) => (
+          children={({ date, timeBlocks }) => (
             <form.Field
               name="timeSlots"
               mode="array"
@@ -391,7 +398,7 @@ function NewSession() {
                 const isInvalid =
                   field.state.meta.isTouched && !field.state.meta.isValid
                 const timeSlotOptions = generateTimeSlots(
-                  time,
+                  new Date(date),
                   parseInt(timeBlocks),
                 )
                 return (
@@ -448,6 +455,7 @@ function NewSession() {
             />
           )}
         />
+        <FieldSeparator />
         <form.Field name="limitPlayers">
           {(limitPlayersField) => (
             <>
@@ -507,7 +515,6 @@ function NewSession() {
         </form.Field>
         <form.Subscribe
           selector={(state) => {
-            console.log('Submitting:', state.isSubmitting)
             return { isSubmitting: state.isSubmitting }
           }}
           children={({ isSubmitting }) => (

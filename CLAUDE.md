@@ -70,7 +70,8 @@ Multi-step authentication using Supabase phone OTP via WhatsApp:
   user: User | null,              // Supabase user object
   player: Player | null,          // Player profile from database
   isPhoneVerified: boolean,       // Has verified phone OTP
-  hasPlaytomicProfile: boolean    // Has Playtomic credentials
+  hasPlaytomicProfile: boolean,   // Has Playtomic credentials
+  role: 'player' | 'organizer'    // User role for RBAC (defaults to 'player')
 }
 ```
 
@@ -84,10 +85,196 @@ Multi-step authentication using Supabase phone OTP via WhatsApp:
 
 - **Client**: Server-side only using `@supabase/ssr` with cookie-based sessions
 - **Auth**: Phone OTP via WhatsApp channel
-- **Database**: PostgreSQL with `players` table (schema types in `src/utils/database.types.ts`)
+- **Database**: PostgreSQL (schema types in `src/utils/database.types.ts`)
 - **Environment variables**:
   - `VITE_SUPABASE_URL`
   - `VITE_SUPABASE_PUBLIC_KEY`
+
+#### Database Schema
+
+**Core Tables:**
+
+1. **`players`** - User profiles linked to Supabase auth
+   - `id` (UUID, PK): Matches Supabase auth.users.id
+   - `name` (TEXT): Player's full name (from Playtomic)
+   - `avatar` (TEXT): Profile picture URL (from Playtomic)
+   - `phone` (TEXT): Phone number in E.164 format
+   - `playtomic_id` (BIGINT): Playtomic user ID for API integration
+   - `level` (INT): Skill level (1-10 scale)
+   - `status` (TEXT): Player status
+   - `created_at` (TIMESTAMPTZ): Record creation timestamp
+
+2. **`sessions`** - Padel session events
+   - `id` (BIGSERIAL, PK): Internal session ID
+   - `public_id` (TEXT, UNIQUE): Public-facing ID (e.g., "JDBU83MQ")
+   - `date` (DATE): Session date
+   - `venue_name` (TEXT): Venue name
+   - `venue_location` (TEXT): Venue location/address
+   - `levels` (TEXT[]): Available skill levels for this session
+   - `time_slots` (JSONB): Array of time slot configurations
+   - `players_per_slot` (INT): Max players per time slot
+   - `limit_players` (BOOLEAN): Whether to enforce player limits
+   - `time_blocks` (INT): Number of time blocks
+   - `created_at` (TIMESTAMPTZ): Record creation timestamp
+
+3. **`session_votes`** - Player votes for session time slots
+   - `id` (BIGSERIAL, PK): Vote ID
+   - `player_id` (UUID, FK → players): Player who voted
+   - `session_id` (BIGINT, FK → sessions): Target session
+   - `option_id` (TEXT): ID of the time slot option voted for
+   - `voted_at` (TIMESTAMPTZ): When the vote was cast
+   - `created_at` (TIMESTAMPTZ): Record creation timestamp
+   - **Constraint**: UNIQUE(player_id, session_id, option_id)
+
+4. **`matches`** - Generated matches from session votes
+   - `id` (BIGSERIAL, PK): Internal match ID
+   - `public_id` (TEXT, UNIQUE): Public-facing match ID
+   - `session_id` (BIGINT, FK → sessions): Parent session
+   - `time_slot_id` (TEXT): Time slot identifier
+   - `level` (TEXT): Skill level for this match
+   - `start_time` (TIMESTAMPTZ): Match start time
+   - `end_time` (TIMESTAMPTZ): Match end time
+   - `max_players` (INT, DEFAULT 4): Maximum players per match
+   - `created_at` (TIMESTAMPTZ): Record creation timestamp
+   - `updated_at` (TIMESTAMPTZ): Last update timestamp
+
+5. **`match_participants`** - Players in matches
+   - `id` (BIGSERIAL, PK): Participant ID
+   - `match_id` (BIGINT, FK → matches): Target match
+   - `player_id` (UUID, FK → players): Player participating
+   - `source` (TEXT, DEFAULT 'manual'): How player joined ('vote' or 'manual')
+   - `joined_at` (TIMESTAMPTZ): When player joined
+   - `created_at` (TIMESTAMPTZ): Record creation timestamp
+   - **Constraint**: UNIQUE(match_id, player_id)
+   - **Trigger**: Validates no time overlap for same player
+
+6. **`games`** (Legacy) - Older game tracking table
+   - `id` (BIGSERIAL, PK): Game ID
+   - `session_id` (BIGINT, FK → sessions): Parent session
+   - `playtomic_id` (TEXT): Playtomic booking ID
+   - `level` (TEXT): Skill level
+   - `starting_time` (TIMESTAMPTZ): Game start time
+   - `status` (TEXT): Game status
+   - `players` (JSONB[]): Array of player objects
+   - `created_at` (TIMESTAMPTZ): Record creation timestamp
+
+7. **`user_roles`** - Role assignments for RBAC system
+   - `id` (BIGSERIAL, PK): Role assignment ID
+   - `user_id` (UUID, FK → auth.users): User being assigned a role
+   - `role` (app_role ENUM): Role value ('player' or 'organizer')
+   - `created_at` (TIMESTAMPTZ): When role was assigned
+   - **Constraint**: UNIQUE(user_id, role) - prevents duplicate role assignments
+   - **Note**: Users can have multiple roles; highest privilege role is used in JWT
+
+**Row Level Security (RLS) Policies:**
+
+All tables have RLS enabled. The general pattern is:
+- **Public SELECT**: All data is publicly viewable (anonymous + authenticated users)
+- **User operations**: Authenticated users can manage their own records
+- **Organizer operations**: Users with 'organizer' role can manage all records
+
+**Detailed policies by table:**
+
+- **`players` table**:
+  - SELECT: Public access (anon + authenticated)
+  - INSERT: Own records only (auth.uid() = id)
+  - UPDATE: Own records only (auth.uid() = id)
+  - DELETE: Own records only (auth.uid() = id)
+
+- **`sessions` table**:
+  - SELECT: Public access
+  - INSERT/UPDATE/DELETE: Organizers only
+
+- **`games` table** (legacy):
+  - SELECT: Public access
+  - INSERT/UPDATE/DELETE: Organizers only
+
+- **`session_votes` table**:
+  - SELECT: Public access
+  - INSERT: Users can vote for themselves (auth.uid() = player_id)
+  - DELETE: Users can delete own votes OR organizers can delete any vote
+
+- **`matches` table**:
+  - SELECT: Public access
+  - INSERT/UPDATE/DELETE: Organizers only
+
+- **`match_participants` table**:
+  - SELECT: Public access
+  - INSERT: Users can join matches themselves OR organizers can add anyone
+  - UPDATE: Organizers only
+  - DELETE: Users can leave their own matches OR organizers can remove anyone
+
+**Important Notes:**
+
+1. **Public Session Access**: Sessions and player profiles are publicly viewable without authentication to allow users to browse before signing up
+2. **Time Overlap Prevention**: PostgreSQL trigger on `match_participants` prevents double-booking players in overlapping time slots
+3. **Hybrid Match Generation**: Matches are created from votes, then manual joins are allowed for remaining slots
+4. **UUID vs BIGINT**: `players.id` uses UUID to match Supabase auth, other IDs use BIGSERIAL for efficiency
+
+### Role-Based Access Control (RBAC)
+
+The app implements RBAC using Supabase's custom JWT claims feature following the [official Supabase RBAC tutorial](https://supabase.com/docs/guides/database/postgres/custom-claims-and-role-based-access-control-rbac). Permissions are enforced at the database level using RLS policies.
+
+**Architecture:**
+
+- **`app_role` enum**: Defines valid roles (`'player'`, `'organizer'`)
+- **`user_roles` table**: Maps users to roles (many-to-many relationship)
+- **JWT hook function**: Adds `user_role` claim to JWT tokens
+- **RLS policies**: Check JWT claim `(auth.jwt() ->> 'user_role')::app_role`
+
+**Roles:**
+- **`player`** (default): Standard user with voting and match participation rights
+- **`organizer`**: Admin user with full session and match management capabilities
+
+**Setup Requirements:**
+
+The JWT hook function exists in the database but **must be registered manually** in the Supabase Dashboard:
+1. Navigate to **Authentication > Hooks**
+2. Enable **"Custom Access Token"** hook
+3. Select function: `public.custom_access_token_hook`
+
+See `RBAC_SETUP.md` for detailed setup instructions, troubleshooting, and how to add new organizers.
+
+**Application-Level Usage:**
+
+```typescript
+import { useRole, useIsOrganizer } from '@/contexts/auth'
+
+function MyComponent() {
+  const role = useRole() // 'player' | 'organizer'
+  const isOrganizer = useIsOrganizer() // boolean
+
+  if (isOrganizer) {
+    return <AdminPanel />
+  }
+  return <PlayerView />
+}
+```
+
+**Role Permissions:**
+
+- **Player role** (default):
+  - View all sessions and matches
+  - Vote on session time slots
+  - Join/leave matches
+  - Manage own profile
+  - Delete own votes
+
+- **Organizer role** (all player permissions plus):
+  - Create/edit/delete sessions
+  - Create/edit/delete matches
+  - Add/remove any player from matches
+  - Delete any votes
+  - Manage games (legacy)
+  - Manage user roles via `user_roles` table
+
+**How It Works:**
+
+1. User authenticates via phone OTP
+2. JWT hook queries `user_roles` table and adds highest privilege role to JWT as `user_role` claim
+3. RLS policies check `(auth.jwt() ->> 'user_role')::public.app_role = 'organizer'` to enforce permissions
+4. Application queries `user_roles` table and exposes role via `useRole()` hook for UI-level access control
+5. Role changes take effect on next token refresh (or sign-out/sign-in)
 
 ### UI Components
 

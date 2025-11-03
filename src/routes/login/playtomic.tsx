@@ -5,20 +5,26 @@ import {
 } from '@tanstack/react-router'
 import { z } from 'zod'
 import { PlaytomicForm } from '@/components/playtomic-form'
-import { searchPlaytomicByPhone, searchPlaytomicByEmail } from '@/utils/playtomic'
+import {
+  searchPlaytomicByPhone,
+  searchPlaytomicByEmail,
+} from '@/utils/playtomic'
 
 export const Route = createFileRoute('/login/playtomic')({
   component: RouteComponent,
   validateSearch: z.object({
     email: z.string().optional(),
+    redirect: z.string().optional(),
   }),
-  beforeLoad: async ({ context }) => {
+  beforeLoad: async ({ context, search }) => {
     const { authData } = context
+    const { redirect: redirectUrl } = search
 
     // Redirect to login if not authenticated
     if (!authData?.user) {
       throw redirect({
         to: '/login',
+        search: redirectUrl ? { redirect: redirectUrl } : undefined,
       })
     }
 
@@ -26,13 +32,14 @@ export const Route = createFileRoute('/login/playtomic')({
     if (!authData.isPhoneVerified) {
       throw redirect({
         to: '/login/otp',
+        search: redirectUrl ? { redirect: redirectUrl } : undefined,
       })
     }
 
     // Redirect to home if already has Playtomic profile
     if (authData.hasPlaytomicProfile) {
       throw redirect({
-        to: '/',
+        to: redirectUrl || '/',
       })
     }
   },
@@ -72,12 +79,19 @@ export const Route = createFileRoute('/login/playtomic')({
 })
 
 function RouteComponent() {
-  const { playtomicProfile, searchMethod } = useLoaderData({ from: '/login/playtomic' })
+  const { playtomicProfile, searchMethod } = useLoaderData({
+    from: '/login/playtomic',
+  })
+  const { redirect } = Route.useSearch()
 
   return (
     <div className="bg-background flex min-h-svh flex-col items-center justify-center gap-6 p-6 md:p-10">
       <div className="w-full max-w-sm">
-        <PlaytomicForm playtomicProfile={playtomicProfile} searchMethod={searchMethod} />
+        <PlaytomicForm
+          playtomicProfile={playtomicProfile}
+          searchMethod={searchMethod}
+          redirect={redirect}
+        />
       </div>
     </div>
   )

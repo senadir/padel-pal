@@ -47,14 +47,17 @@ const PlaytomicLogo = ({ className }: { className?: string }) => {
   )
 }
 
+// CHANGE: Added redirect prop to support return-to-origin flow
 type PlaytomicFormProps = React.ComponentProps<'div'> & {
   playtomicProfile: PlaytomicProfile | null | undefined
   searchMethod: 'phone' | 'email' | 'none'
+  redirect?: string // URL to return to after profile linking
 }
 
 export function PlaytomicForm({
   playtomicProfile,
   searchMethod,
+  redirect,
   className,
   ...props
 }: PlaytomicFormProps) {
@@ -82,9 +85,10 @@ export function PlaytomicForm({
       // Invalidate auth query to refresh
       queryClient.invalidateQueries({ queryKey: ['user'] })
       toast.success('Profile linked successfully!')
-      // Redirect to home
-      router.invalidate()
-      navigate({ to: '/' })
+
+      // CHANGE: Use window.location.href instead of router navigate()
+      // Full page reload ensures session state is clean and redirect works correctly
+      window.location.href = redirect || '/'
     },
     onError: (error) => {
       console.error('Error linking profile:', error)
@@ -102,10 +106,12 @@ export function PlaytomicForm({
     onSuccess: (profile) => {
       if (profile) {
         setSearchByEmailOpen(false)
-        // Update URL with email query param
+        // CHANGE: Preserve redirect parameter when searching by email
+        // This ensures the redirect URL isn't lost when user searches for
+        // their Playtomic profile using a different method
         navigate({
           to: '/login/playtomic',
-          search: { email: emailInput },
+          search: { email: emailInput, redirect },
         })
       } else {
         toast.error('No profile found with that email')

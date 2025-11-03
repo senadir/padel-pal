@@ -18,7 +18,12 @@ import {
 import { verifyOtp } from '@/utils/auth'
 import { toast } from 'sonner'
 
-export function OTPForm({ className, ...props }: React.ComponentProps<'div'>) {
+// CHANGE: Added redirect prop to support return-to-origin flow
+type OTPFormProps = React.ComponentProps<'div'> & {
+  redirect?: string
+}
+
+export function OTPForm({ redirect, className, ...props }: OTPFormProps) {
   const [otp, setOtp] = useState('')
   const verifyButtonRef = useRef<HTMLButtonElement>(null)
   const navigate = useNavigate()
@@ -29,11 +34,23 @@ export function OTPForm({ className, ...props }: React.ComponentProps<'div'>) {
     mutationFn: verifyOtp,
     onSuccess: (player) => {
       toast.success('Phone number verified successfully!')
+
+      // CHANGE: Use window.location.href instead of TanStack Router navigate()
+      // This forces a full page reload which ensures the new session cookies
+      // are properly picked up. Using router navigation caused "Refresh Token Not Found"
+      // errors because the router would try to refetch with stale tokens before
+      // the new session was fully established.
+
       // Redirect based on whether player has playtomic_id
       if (player?.playtomic_id) {
-        navigate({ to: '/' })
+        // Player already has Playtomic profile, go to redirect URL or home
+        window.location.href = redirect || '/'
       } else {
-        navigate({ to: '/login/playtomic' })
+        // Player needs to link Playtomic profile, propagate redirect parameter
+        const playtomicUrl = redirect
+          ? `/login/playtomic?redirect=${encodeURIComponent(redirect)}`
+          : '/login/playtomic'
+        window.location.href = playtomicUrl
       }
     },
     onError: (error) => {
@@ -53,7 +70,7 @@ export function OTPForm({ className, ...props }: React.ComponentProps<'div'>) {
 
   useEffect(() => {
     if (otp.length === 6) {
-      verifyButtonRef.current?.focus()
+      verifyButtonRef.current?.click()
     }
   }, [otp])
 
@@ -103,6 +120,7 @@ export function OTPForm({ className, ...props }: React.ComponentProps<'div'>) {
               containerClassName="gap-2 justify-center"
               value={otp}
               onChange={(value) => setOtp(value)}
+              autoFocus={true}
             >
               <InputOTPGroup className="gap-2.5 *:data-[slot=input-otp-slot]:h-16 *:data-[slot=input-otp-slot]:w-10 *:data-[slot=input-otp-slot]:rounded-md *:data-[slot=input-otp-slot]:border *:data-[slot=input-otp-slot]:text-xl">
                 <InputOTPSlot index={0} />
@@ -124,7 +142,9 @@ export function OTPForm({ className, ...props }: React.ComponentProps<'div'>) {
             <Button
               type="submit"
               size="lg"
-              disabled={otp.length !== 6 || !phone || verifyOtpMutation.isPending}
+              disabled={
+                otp.length !== 6 || !phone || verifyOtpMutation.isPending
+              }
               ref={verifyButtonRef}
             >
               {verifyOtpMutation.isPending ? 'Verifying...' : 'Verify'}

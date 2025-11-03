@@ -45,7 +45,104 @@ export type Database = {
           starting_time?: string | null
           status?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "games_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      match_participants: {
+        Row: {
+          created_at: string
+          id: number
+          joined_at: string
+          match_id: number
+          player_id: string
+          source: string
+        }
+        Insert: {
+          created_at?: string
+          id?: number
+          joined_at?: string
+          match_id: number
+          player_id: string
+          source?: string
+        }
+        Update: {
+          created_at?: string
+          id?: number
+          joined_at?: string
+          match_id?: number
+          player_id?: string
+          source?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "match_participants_match_id_fkey"
+            columns: ["match_id"]
+            isOneToOne: false
+            referencedRelation: "matches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "match_participants_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      matches: {
+        Row: {
+          created_at: string
+          end_time: string
+          id: number
+          level: string
+          max_players: number
+          public_id: string
+          session_id: number
+          start_time: string
+          time_slot_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          end_time: string
+          id?: number
+          level: string
+          max_players?: number
+          public_id: string
+          session_id: number
+          start_time: string
+          time_slot_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          end_time?: string
+          id?: number
+          level?: string
+          max_players?: number
+          public_id?: string
+          session_id?: number
+          start_time?: string
+          time_slot_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "matches_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       players: {
         Row: {
@@ -80,6 +177,48 @@ export type Database = {
         }
         Relationships: []
       }
+      session_votes: {
+        Row: {
+          created_at: string
+          id: number
+          option_id: string
+          player_id: string
+          session_id: number
+          voted_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: number
+          option_id: string
+          player_id: string
+          session_id: number
+          voted_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: number
+          option_id?: string
+          player_id?: string
+          session_id?: number
+          voted_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "session_votes_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "session_votes_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sessions: {
         Row: {
           created_at: string | null
@@ -89,10 +228,12 @@ export type Database = {
           limit_players: boolean | null
           players_per_slot: number | null
           public_id: string
+          status: Database["public"]["Enums"]["session_status"]
           time_blocks: number | null
           time_slots: Json | null
           venue_location: string | null
           venue_name: string | null
+          voting_closes_at: string | null
         }
         Insert: {
           created_at?: string | null
@@ -102,10 +243,12 @@ export type Database = {
           limit_players?: boolean | null
           players_per_slot?: number | null
           public_id: string
+          status?: Database["public"]["Enums"]["session_status"]
           time_blocks?: number | null
           time_slots?: Json | null
           venue_location?: string | null
           venue_name?: string | null
+          voting_closes_at?: string | null
         }
         Update: {
           created_at?: string | null
@@ -115,10 +258,33 @@ export type Database = {
           limit_players?: boolean | null
           players_per_slot?: number | null
           public_id?: string
+          status?: Database["public"]["Enums"]["session_status"]
           time_blocks?: number | null
           time_slots?: Json | null
           venue_location?: string | null
           venue_name?: string | null
+          voting_closes_at?: string | null
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          created_at: string | null
+          id: number
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: number
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: number
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
         }
         Relationships: []
       }
@@ -127,10 +293,12 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      custom_access_token_hook: { Args: { event: Json }; Returns: Json }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "player" | "organizer"
+      Levels: "beginner" | "improver" | "intermediate" | "advanced"
+      session_status: "draft" | "voting" | "open" | "cancelled" | "closed"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -257,6 +425,10 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["player", "organizer"],
+      Levels: ["beginner", "improver", "intermediate", "advanced"],
+      session_status: ["draft", "voting", "open", "cancelled", "closed"],
+    },
   },
 } as const

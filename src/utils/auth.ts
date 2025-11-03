@@ -57,11 +57,22 @@ export const fetchUser = createServerFn({ method: 'GET' }).handler(async () => {
     }
   }
 
+  // Fetch user's highest privilege role from user_roles table
+  const { data: userRoles } = await supabase
+    .from('user_roles')
+    .select('role')
+    .eq('user_id', data.user.id)
+    .order('role', { ascending: true }) // organizer comes before player alphabetically
+
+  // Get the highest privilege role (organizer > player)
+  const role = userRoles?.find((r) => r.role === 'organizer')?.role || userRoles?.[0]?.role || 'player'
+
   return {
     user: data.user,
     player,
     isPhoneVerified,
     hasPlaytomicProfile: !!player?.playtomic_id,
+    role,
   }
 })
 
@@ -112,18 +123,28 @@ export const verifyOtp = createServerFn({ method: 'POST' })
     // Ensure phone is in E.164 format with + prefix
     const phone = data.phone.startsWith('+') ? data.phone : `+${data.phone}`
 
+    // CHANGE: Use upsert instead of insert to handle both new and returning users
+    // This prevents "duplicate key" errors when existing users log in again
+    // The upsert will create a new record for first-time users, or update the phone
+    // for existing users (in case they changed their number)
     const { data: player, error: playerError } = await supabase
       .from('players')
-      .insert({
-        id: response.user.id,
-        phone: phone,
-      })
+      .upsert(
+        {
+          id: response.user.id,
+          phone: phone,
+        },
+        {
+          onConflict: 'id', // Conflict on primary key (user ID)
+          ignoreDuplicates: false, // Update the record if it exists
+        },
+      )
       .select()
       .single()
 
     if (playerError) {
-      console.error('Error creating player in verifyOtp:', playerError)
-      throw new Error('Failed to create player profile')
+      console.error('Error upserting player in verifyOtp:', playerError)
+      throw new Error('Failed to create or update player profile')
     }
 
     return player
@@ -171,6 +192,17 @@ export const linkPlaytomicProfile = createServerFn({ method: 'POST' })
 
     return player
   })
+
+export const logout = createServerFn({ method: 'POST' }).handler(async () => {
+  const supabase = getSupabaseServerClient()
+  const { error } = await supabase.auth.signOut()
+
+  if (error) {
+    throw new Error(error.message)
+  }
+
+  return { success: true }
+})
 
 // Utility function to determine redirect path based on user status
 export function getLoginRedirectPath(authData: any): string | null {
