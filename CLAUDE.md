@@ -169,11 +169,12 @@ Multi-step authentication using Supabase phone OTP via WhatsApp:
 
 8. **`venues`** - Simplified venue storage for autocomplete
    - `id` (BIGSERIAL, PK): Venue ID
-   - `label` (TEXT, NOT NULL): Venue display name
-   - `maps_url` (TEXT, NOT NULL, UNIQUE): Google Maps URL (used as unique identifier)
+   - `label` (TEXT): Venue display name
+   - `maps_url` (TEXT): Google Maps URL (used as unique identifier)
+   - `place_id` (TEXT, NOT NULL, UNIQUE): Google Place ID (used as unique identifier)
    - `created_at` (TIMESTAMPTZ): Record creation timestamp
    - **Note**: Simplified to only essential fields; automatically populated when sessions are created
-   - **Constraint**: UNIQUE(maps_url) prevents duplicate venues
+   - **Constraint**: UNIQUE(place_id) prevents duplicate venues
 
 **Row Level Security (RLS) Policies:**
 
@@ -287,66 +288,6 @@ function MyComponent() {
 3. RLS policies check `(auth.jwt() ->> 'user_role')::public.app_role = 'organizer'` to enforce permissions
 4. Application queries `user_roles` table and exposes role via `useRole()` hook for UI-level access control
 5. Role changes take effect on next token refresh (or sign-out/sign-in)
-
-### Venue Search System
-
-Unified place search that combines Google Places API with stored venue history:
-
-**Components:**
-- `PlaceSearchCombobox` (`src/components/place-search-combobox.tsx`): Custom combobox using shadcn Command component
-- Client-side filtering of saved venues (instant, no DB queries during search)
-- Debounced Google Places search (300ms) using official Google Maps JavaScript SDK
-- Automatic venue saving and usage tracking on session creation
-
-**Database:**
-- `venues` table: Stores previously used locations
-  - `id`: Primary key
-  - `label`: Venue name or label
-  - `maps_url`: Google Maps URL for the venue
-  - `place_id`: Google Place ID
-  - `created_at`: Timestamp when the venue was added
-- RLS policies: Public read, organizer-only write
-- Indexes on `google_place_id` and `usage_count` for performance
-
-**Client Functions:**
-- `searchGooglePlaces()` (`src/utils/google-places.ts`): Client-side Google Places Autocomplete using JS SDK
-  - Uses `AutocompleteSuggestion.fetchAutocompleteSuggestions()` API (recommended as of March 2025)
-  - Filters to padel-relevant types: `gym`, `sports_complex`, `sports_club`
-  - Accepts optional `location` parameter for precise location bias
-- `getGooglePlaceDetails()`: Fetches full place details (Maps URL, coordinates) using PlacesService
-- **Session tokens**: Automatically managed for optimal billing (autocomplete + details counted as one request)
-- **Location bias**:
-  - Requests browser geolocation when user starts typing (contextual permission prompt)
-  - Only requests permission once per session
-  - Uses 50km radius around user's actual coordinates for better local results
-  - Falls back to IP-based location if permission denied
-  - Location cached for 5 minutes to avoid repeated permission prompts
-
-**Server Functions:**
-- `getRecentVenues()` (`src/utils/venues.ts`): Fetches all venues sorted by usage/recency
-- `upsertVenue()`: Creates new venue or increments usage_count if exists
-- `getGooglePlaceDetailsServer()`: Server-side place details fetch for session creation
-
-**Environment Variables:**
-- `VITE_GOOGLE_PLACES_API_KEY`: Required for venue search functionality
-  - Must be configured in Google Cloud Console with Places API (new) enabled
-  - Requires HTTP referrer restrictions for production
-  - Add `localhost:3000` for local development
-- Google Maps JS SDK loaded in `__root.tsx` with `libraries=places` parameter
-
-**Key Features:**
-- Loads all venues on mount, filters client-side for instant results
-- Google Places searches go directly from browser → Google (no server round-trip)
-- Three result sections: "Recently Used" (no search), "Your Saved Venues" (filtered DB), "Search Google Places" (API)
-- Deduplicates results by `google_place_id`
-- Increments usage count on venue reuse
-- Graceful fallback if Google API unavailable
-
-**Search Flow:**
-1. User opens combobox → shows all venues sorted by usage
-2. User types → filters saved venues client-side + searches Google Places (debounced)
-3. User selects → fetches full details if needed → populates form
-4. Session created → venue saved/updated in database
 
 ### UI Components
 
