@@ -906,7 +906,7 @@ export const createSessionValidator: z.ZodType<SessionForm> = z.object({
   venueLocation: z
     .string()
     .url({ message: 'Please enter a valid URL for the venue' }),
-  venuePlaceId: z.string().optional(),
+  venuePlaceId: z.string().min(1, { message: 'Venue Place ID is required' }),
   date: z.date(),
   levels: z
     .array(
