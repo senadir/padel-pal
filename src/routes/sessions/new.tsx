@@ -1,11 +1,18 @@
 import { formOptions, useForm } from '@tanstack/react-form'
 import { useQueryClient } from '@tanstack/react-query'
-import { createFileRoute, redirect, useRouter } from '@tanstack/react-router'
+import {
+  ClientOnly,
+  createFileRoute,
+  redirect,
+  useRouter,
+} from '@tanstack/react-router'
 import { addMinutes, format, isAfter, parse } from 'date-fns'
 import { ChevronDown, ChevronsUpDown, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { SessionForm } from '@/utils/types'
+import { AnimatedCounter } from '@/components/ui/animated-counter'
 import { PlaceSearchCombobox } from '@/components/place-search-combobox'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ButtonGroup } from '@/components/ui/button-group'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -16,7 +23,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Badge } from '@/components/ui/badge'
 import {
   Field,
   FieldContent,
@@ -369,9 +375,22 @@ function NewSession() {
                             <div className="flex items-center justify-between gap-4 px-4">
                               <div className="flex items-center gap-2">
                                 <h4 className="text-sm">{option.label}</h4>
-                                {levelData?.timeSlots.length > 0 && (
-                                  <Badge>{levelData?.timeSlots.length}</Badge>
-                                )}
+                                <Badge
+                                  className="font-mono w-8 h-6 p-0 flex items-center justify-center"
+                                  variant={
+                                    levelData.timeSlots.length === 0
+                                      ? 'outline'
+                                      : 'default'
+                                  }
+                                >
+                                  <ClientOnly
+                                    fallback={levelData.timeSlots.length}
+                                  >
+                                    <AnimatedCounter
+                                      value={levelData.timeSlots.length}
+                                    />
+                                  </ClientOnly>
+                                </Badge>
                               </div>
                               <CollapsibleTrigger asChild>
                                 <Button
