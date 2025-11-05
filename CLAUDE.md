@@ -96,53 +96,55 @@ Multi-step authentication using Supabase phone OTP via WhatsApp:
 **Core Tables:**
 
 1. **`players`** - User profiles linked to Supabase auth
-   - `id` (UUID, PK): Matches Supabase auth.users.id
-   - `name` (TEXT): Player's full name (from Playtomic)
-   - `avatar` (TEXT): Profile picture URL (from Playtomic)
-   - `phone` (TEXT): Phone number in E.164 format
-   - `playtomic_id` (BIGINT): Playtomic user ID for API integration
-   - `level` (INT): Skill level (1-10 scale)
-   - `status` (TEXT): Player status
+   - `id` (TEXT/UUID, PK): Matches Supabase auth.users.id
+   - `name` (TEXT, nullable): Player's full name (from Playtomic)
+   - `avatar` (TEXT, nullable): Profile picture URL (from Playtomic)
+   - `phone` (TEXT, nullable): Phone number in E.164 format
+   - `playtomic_id` (INTEGER, nullable): Playtomic user ID for API integration
+   - `level` (INTEGER, nullable): Skill level (1-10 scale)
+   - `status` (TEXT, nullable): Player status
    - `created_at` (TIMESTAMPTZ): Record creation timestamp
 
 2. **`sessions`** - Padel session events
-   - `id` (BIGSERIAL, PK): Internal session ID
-   - `public_id` (TEXT, UNIQUE): Public-facing ID (e.g., "JDBU83MQ")
-   - `date` (DATE): Session date
-   - `venue_name` (TEXT): Venue name
-   - `venue_location` (TEXT): Venue location/address
-   - `levels` (TEXT[]): Available skill levels for this session
-   - `time_slots` (JSONB): Array of time slot configurations
-   - `players_per_slot` (INT): Max players per time slot
-   - `limit_players` (BOOLEAN): Whether to enforce player limits
-   - `time_blocks` (INT): Number of time blocks
-   - `created_at` (TIMESTAMPTZ): Record creation timestamp
+   - `id` (INTEGER, PK, auto-increment): Internal session ID
+   - `public_id` (TEXT, UNIQUE, NOT NULL): Public-facing ID (e.g., "JDBU83MQ")
+   - `date` (TIMESTAMPTZ, nullable): Session date and time combined
+   - `venue_name` (TEXT, nullable): Venue name
+   - `venue_location` (TEXT, nullable): Venue Google Maps URL
+   - `levels` (TEXT[], NOT NULL): Available skill levels for this session
+   - `time_slots` (JSONB, nullable): Array of time slot configurations with options
+   - `players_per_slot` (INTEGER, nullable): Max players per time slot (when limit_players is true)
+   - `limit_players` (BOOLEAN, nullable): Whether to enforce player limits
+   - `time_blocks` (INTEGER, nullable): Duration of time blocks in minutes (60 or 90)
+   - `status` (session_status ENUM, NOT NULL): Current status ('draft' | 'voting' | 'open' | 'cancelled' | 'closed')
+   - `voting_closes_at` (TIMESTAMPTZ, nullable): Optional deadline for when voting closes
+   - `created_at` (TIMESTAMPTZ, nullable): Record creation timestamp
 
 3. **`session_votes`** - Player votes for session time slots
-   - `id` (BIGSERIAL, PK): Vote ID
-   - `player_id` (UUID, FK → players): Player who voted
-   - `session_id` (BIGINT, FK → sessions): Target session
-   - `option_id` (TEXT): ID of the time slot option voted for
+   - `id` (INTEGER, PK, auto-increment): Vote ID
+   - `player_id` (TEXT/UUID, FK → players, NOT NULL): Player who voted
+   - `session_id` (INTEGER, FK → sessions, NOT NULL): Target session
+   - `option_id` (TEXT, NOT NULL): ID of the time slot option voted for
    - `voted_at` (TIMESTAMPTZ): When the vote was cast
    - `created_at` (TIMESTAMPTZ): Record creation timestamp
    - **Constraint**: UNIQUE(player_id, session_id, option_id)
 
 4. **`matches`** - Generated matches from session votes
-   - `id` (BIGSERIAL, PK): Internal match ID
-   - `public_id` (TEXT, UNIQUE): Public-facing match ID
-   - `session_id` (BIGINT, FK → sessions): Parent session
-   - `time_slot_id` (TEXT): Time slot identifier
-   - `level` (TEXT): Skill level for this match
-   - `start_time` (TIMESTAMPTZ): Match start time
-   - `end_time` (TIMESTAMPTZ): Match end time
-   - `max_players` (INT, DEFAULT 4): Maximum players per match
+   - `id` (INTEGER, PK, auto-increment): Internal match ID
+   - `public_id` (TEXT, UNIQUE, NOT NULL): Public-facing match ID
+   - `session_id` (INTEGER, FK → sessions, NOT NULL): Parent session
+   - `time_slot_id` (TEXT, NOT NULL): Time slot identifier
+   - `level` (TEXT, NOT NULL): Skill level for this match
+   - `start_time` (TIMESTAMPTZ, NOT NULL): Match start time
+   - `end_time` (TIMESTAMPTZ, NOT NULL): Match end time
+   - `max_players` (INTEGER, NOT NULL, DEFAULT 4): Maximum players per match
    - `created_at` (TIMESTAMPTZ): Record creation timestamp
    - `updated_at` (TIMESTAMPTZ): Last update timestamp
 
 5. **`match_participants`** - Players in matches
-   - `id` (BIGSERIAL, PK): Participant ID
-   - `match_id` (BIGINT, FK → matches): Target match
-   - `player_id` (UUID, FK → players): Player participating
+   - `id` (INTEGER, PK, auto-increment): Participant ID
+   - `match_id` (INTEGER, FK → matches, NOT NULL): Target match
+   - `player_id` (TEXT/UUID, FK → players, NOT NULL): Player participating
    - `source` (TEXT, DEFAULT 'manual'): How player joined ('vote' or 'manual')
    - `joined_at` (TIMESTAMPTZ): When player joined
    - `created_at` (TIMESTAMPTZ): Record creation timestamp
@@ -150,30 +152,30 @@ Multi-step authentication using Supabase phone OTP via WhatsApp:
    - **Trigger**: Validates no time overlap for same player
 
 6. **`games`** (Legacy) - Older game tracking table
-   - `id` (BIGSERIAL, PK): Game ID
-   - `session_id` (BIGINT, FK → sessions): Parent session
-   - `playtomic_id` (TEXT): Playtomic booking ID
-   - `level` (TEXT): Skill level
-   - `starting_time` (TIMESTAMPTZ): Game start time
-   - `status` (TEXT): Game status
-   - `players` (JSONB[]): Array of player objects
+   - `id` (INTEGER, PK, auto-increment): Game ID
+   - `session_id` (INTEGER, FK → sessions, nullable): Parent session
+   - `playtomic_id` (TEXT, nullable): Playtomic booking ID
+   - `level` (TEXT, nullable): Skill level
+   - `starting_time` (TIMESTAMPTZ, nullable): Game start time
+   - `status` (TEXT, nullable): Game status
+   - `players` (JSONB[], nullable): Array of player objects
    - `created_at` (TIMESTAMPTZ): Record creation timestamp
 
 7. **`user_roles`** - Role assignments for RBAC system
-   - `id` (BIGSERIAL, PK): Role assignment ID
-   - `user_id` (UUID, FK → auth.users): User being assigned a role
-   - `role` (app_role ENUM): Role value ('player' or 'organizer')
-   - `created_at` (TIMESTAMPTZ): When role was assigned
+   - `id` (INTEGER, PK, auto-increment): Role assignment ID
+   - `user_id` (TEXT/UUID, FK → auth.users, NOT NULL): User being assigned a role
+   - `role` (app_role ENUM, NOT NULL): Role value ('player' or 'organizer')
+   - `created_at` (TIMESTAMPTZ, nullable): When role was assigned
    - **Constraint**: UNIQUE(user_id, role) - prevents duplicate role assignments
    - **Note**: Users can have multiple roles; highest privilege role is used in JWT
 
-8. **`venues`** - Simplified venue storage for autocomplete
-   - `id` (BIGSERIAL, PK): Venue ID
-   - `label` (TEXT): Venue display name
-   - `maps_url` (TEXT): Google Maps URL (used as unique identifier)
-   - `place_id` (TEXT, NOT NULL, UNIQUE): Google Place ID (used as unique identifier)
-   - `created_at` (TIMESTAMPTZ): Record creation timestamp
-   - **Note**: Simplified to only essential fields; automatically populated when sessions are created
+8. **`venues`** - Venue storage for autocomplete (Google Places integration)
+   - `id` (INTEGER, PK, auto-increment): Venue ID
+   - `label` (TEXT, nullable): Venue display name
+   - `maps_url` (TEXT, nullable): Google Maps URL
+   - `place_id` (TEXT, NOT NULL, UNIQUE): Google Place ID (unique identifier)
+   - `created_at` (TIMESTAMPTZ, nullable): Record creation timestamp
+   - **Note**: Automatically populated when sessions are created via `upsertVenue()`
    - **Constraint**: UNIQUE(place_id) prevents duplicate venues
 
 **Row Level Security (RLS) Policies:**

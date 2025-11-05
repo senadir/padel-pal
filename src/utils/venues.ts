@@ -34,18 +34,23 @@ export const getRecentVenues = createServerFn({ method: 'GET' }).handler(
 
 /**
  * Create venue (simplified schema: label, maps_url, and place_id)
- * Uses upsert to avoid duplicates based on maps_url unique constraint
+ * Uses upsert to avoid duplicates based on place_id unique constraint
  */
 interface UpsertVenueInput {
   label: string
   mapsUrl: string
-  placeId?: string
+  placeId: string // Required - NOT NULL in database
 }
 
 export const upsertVenue = createServerFn({ method: 'POST' })
   .inputValidator((data: UpsertVenueInput) => data)
   .handler(async ({ data }) => {
     const supabase = getSupabaseServerClient()
+
+    // Validate placeId is provided
+    if (!data.placeId) {
+      throw new Error('place_id is required')
+    }
 
     // Upsert venue (insert or ignore if place_id already exists)
     const { data: venue, error } = await supabase
@@ -54,7 +59,7 @@ export const upsertVenue = createServerFn({ method: 'POST' })
         {
           label: data.label,
           maps_url: data.mapsUrl,
-          place_id: data.placeId || null,
+          place_id: data.placeId,
         },
         {
           onConflict: 'place_id',
@@ -67,10 +72,6 @@ export const upsertVenue = createServerFn({ method: 'POST' })
     if (error || !venue) {
       // If ignoreDuplicates is true and venue exists, we get null data but no error
       // In that case, fetch the existing venue
-      if (!data.placeId) {
-        throw new Error('Failed to upsert venue: place_id is required')
-      }
-
       const { data: existing, error: fetchError } = await supabase
         .from('venues')
         .select('id')

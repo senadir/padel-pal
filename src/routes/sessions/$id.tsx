@@ -6,6 +6,7 @@ import {
   queryOptions,
   useMutation,
   useQuery,
+  useQueryClient,
   useSuspenseQuery,
 } from '@tanstack/react-query'
 import { z } from 'zod'
@@ -104,11 +105,15 @@ function RouteComponent() {
   const { authData } = useAuth()
   const navigate = useNavigate({ from: Route.fullPath })
   const isOrganizer = useIsOrganizer()
+  const queryClient = useQueryClient()
 
   // Delete session mutation
   const deleteSessionMutation = useMutation({
     mutationFn: () => deleteSession({ data: { sessionPublicId: id } }),
     onSuccess: () => {
+      // Invalidate sessions list to refresh the home page
+      queryClient.invalidateQueries({ queryKey: ['sessions'] })
+
       toast.success('Session deleted successfully')
       navigate({ to: '/' })
     },

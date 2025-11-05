@@ -20,6 +20,8 @@ export const getRouter = () => {
         </TanstackQuery.Provider>
       )
     },
+    defaultViewTransition: true,
+    defaultStructuralSharing: true,
   })
 
   setupRouterSsrQueryIntegration({ router, queryClient: rqContext.queryClient })
