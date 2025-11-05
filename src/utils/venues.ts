@@ -47,7 +47,7 @@ export const upsertVenue = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     const supabase = getSupabaseServerClient()
 
-    // Upsert venue (insert or ignore if maps_url already exists)
+    // Upsert venue (insert or ignore if place_id already exists)
     const { data: venue, error } = await supabase
       .from('venues')
       .upsert(
@@ -57,7 +57,7 @@ export const upsertVenue = createServerFn({ method: 'POST' })
           place_id: data.placeId || null,
         },
         {
-          onConflict: 'maps_url',
+          onConflict: 'place_id',
           ignoreDuplicates: true, // Don't error if venue already exists
         },
       )
@@ -67,10 +67,14 @@ export const upsertVenue = createServerFn({ method: 'POST' })
     if (error || !venue) {
       // If ignoreDuplicates is true and venue exists, we get null data but no error
       // In that case, fetch the existing venue
+      if (!data.placeId) {
+        throw new Error('Failed to upsert venue: place_id is required')
+      }
+
       const { data: existing, error: fetchError } = await supabase
         .from('venues')
         .select('id')
-        .eq('maps_url', data.mapsUrl)
+        .eq('place_id', data.placeId)
         .single()
 
       if (existing) {

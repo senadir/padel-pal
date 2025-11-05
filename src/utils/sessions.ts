@@ -945,7 +945,7 @@ export const createSession = createServerFn({ method: 'POST' })
 
         // Save venue to database for future autocomplete
         const { venueName, venueLocation, venuePlaceId } = data
-        if (venueName && venueLocation) {
+        if (venueName && venueLocation && venuePlaceId) {
           try {
             await upsertVenue({
               data: {
