@@ -97,12 +97,10 @@ export function PlaceSearchCombobox({
     queryFn: async () => {
       if (!debouncedSearch || debouncedSearch.length < 3) return []
 
-      const results = await searchGooglePlaces({
-        data: {
-          query: debouncedSearch,
-          location: userLocation || undefined,
-        },
-      })
+      const results = await searchGooglePlaces(
+        debouncedSearch,
+        userLocation || undefined,
+      )
 
       // Transform and filter duplicates
       const googlePlaces: PlaceSearchResult[] = results.map((place) => ({
@@ -124,8 +122,14 @@ export function PlaceSearchCombobox({
 
   // Mutation: Get place details on selection
   const placeDetailsMutation = useMutation({
-    mutationFn: getGooglePlaceDetails,
-    onSuccess: (details, placeId) => {
+    mutationFn: (placeId: string) => getGooglePlaceDetails(placeId),
+    onSuccess: (details) => {
+      // Ensure we have all required fields
+      if (!details.place_id || !details.url) {
+        console.error('Invalid place details received:', details)
+        throw new Error('Invalid place details: missing place_id or url')
+      }
+
       onSelect({
         name: details.name,
         location: details.url,
@@ -159,11 +163,22 @@ export function PlaceSearchCombobox({
       place.googlePlaceId &&
       !place.googleMapsUrl
     ) {
+      // Validate place ID exists before making API call
+      if (!place.googlePlaceId) {
+        console.error('Google place missing place ID:', place)
+        return
+      }
       placeDetailsMutation.mutate(place.googlePlaceId)
     } else {
       // Database venue with all details - validate location exists
       if (!place.googleMapsUrl) {
         console.error('Venue missing Maps URL:', place)
+        return
+      }
+
+      // Validate placeId exists for database venues
+      if (!place.googlePlaceId) {
+        console.error('Venue missing place ID:', place)
         return
       }
 
