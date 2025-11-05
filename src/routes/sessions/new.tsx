@@ -1,8 +1,28 @@
-import { createFileRoute, redirect, useRouter } from '@tanstack/react-router'
+import { formOptions, useForm } from '@tanstack/react-form'
 import { useQueryClient } from '@tanstack/react-query'
+import {
+  ClientOnly,
+  createFileRoute,
+  redirect,
+  useRouter,
+} from '@tanstack/react-router'
 import { addMinutes, format, isAfter, parse } from 'date-fns'
-import { Loader2 } from 'lucide-react'
+import { ChevronDown, ChevronsUpDown, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
+import type { SessionForm } from '@/utils/types'
+import { AnimatedCounter } from '@/components/ui/animated-counter'
+import { PlaceSearchCombobox } from '@/components/place-search-combobox'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { ButtonGroup } from '@/components/ui/button-group'
+import { Checkbox } from '@/components/ui/checkbox'
+import { DateTimePicker } from '@/components/ui/datetime-picker'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import {
   Field,
   FieldContent,
@@ -15,26 +35,15 @@ import {
   FieldSet,
   FieldTitle,
 } from '@/components/ui/field'
-
 import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog'
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible'
+import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'
 import { Input } from '@/components/ui/input'
-import { Button } from '@/components/ui/button'
-import { DateTimePicker } from '@/components/ui/datetime-picker'
-import { Checkbox } from '@/components/ui/checkbox'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import { formOptions, useForm } from '@tanstack/react-form'
 import { createSession, createSessionValidator } from '@/utils/sessions'
-import type { SessionForm } from '@/utils/types'
-import { PlaceSearchCombobox } from '@/components/place-search-combobox'
 
 const defaultSession: SessionForm = {
   venueName: '',
@@ -46,31 +55,13 @@ const defaultSession: SessionForm = {
     return date
   })(),
   votingClosesAt: undefined,
-  levels: ['beginner', 'improver', 'intermediate'],
-  timeBlocks: '60',
-  timeSlots: [
-    {
-      id: '16:00-17:00',
-      range: [
-        parse('16:00', 'HH:mm', new Date()),
-        parse('17:00', 'HH:mm', new Date()),
-      ],
-    },
-    {
-      id: '17:00-18:00',
-      range: [
-        parse('17:00', 'HH:mm', new Date()),
-        parse('18:00', 'HH:mm', new Date()),
-      ],
-    },
-    {
-      id: '18:00-19:00',
-      range: [
-        parse('18:00', 'HH:mm', new Date()),
-        parse('19:00', 'HH:mm', new Date()),
-      ],
-    },
+  levels: [
+    { level: 'beginner', timeSlots: [] },
+    { level: 'improver', timeSlots: [] },
+    { level: 'intermediate', timeSlots: [] },
+    { level: 'advanced', timeSlots: [] },
   ],
+  timeBlocks: '60',
   limitPlayers: false,
   playersPerSlot: 4,
 }
@@ -110,6 +101,35 @@ export const Route = createFileRoute('/sessions/new')({
   }),
 })
 
+// Helper function to generate time slots (defined outside component)
+const generateTimeSlots = (date: Date, timeBlocks: number) => {
+  const slots: SessionForm['timeSlots'] = []
+
+  // Set the maximum end time to 11:00 PM on the same day as the input date
+  const maxEndTime = new Date(date)
+  maxEndTime.setHours(23, 0, 0, 0)
+
+  let currentTime = new Date(date)
+
+  // Generate slots until 11 PM
+  while (true) {
+    const endTime = addMinutes(currentTime, timeBlocks)
+
+    // Check if end time would go beyond 11 PM
+    if (isAfter(endTime, maxEndTime)) {
+      break
+    }
+
+    slots.push({
+      id: `${format(currentTime, 'HH:mm')} - ${format(endTime, 'HH:mm')}`,
+      range: [new Date(currentTime), new Date(endTime)],
+    })
+    currentTime = endTime
+  }
+
+  return slots
+}
+
 function NewSession() {
   const router = useRouter()
   const queryClient = useQueryClient()
@@ -120,64 +140,53 @@ function NewSession() {
       onSubmit: createSessionValidator,
     },
     onSubmit: async ({ value }) => {
-      try {
-        const sessionId = await createSession({ data: value })
-
-        // Invalidate venues query to refresh the list with the newly added venue
-        await queryClient.invalidateQueries({ queryKey: ['venues'] })
-
-        // Navigate to the session page
-        router.navigate({
-          to: '/sessions/$id',
-          params: { id: sessionId },
-        })
-      } catch (error) {
-        console.error('Error creating session:', error)
-
-        // Show error toast
-        const errorMessage =
-          error instanceof Error
-            ? error.message
-            : 'An unexpected error occurred'
-        toast.error('Failed to create session', {
-          description: errorMessage,
-        })
-
-        // Re-throw the error to prevent form submission success
-        throw error
-      }
+      // This will be triggered by direct form submission (not used anymore)
+      // We'll handle submission via custom functions below
     },
   })
   const form = useForm(sessionFormOptions)
 
-  // Generate time slots based on session time and time blocks
-  const generateTimeSlots = (date: Date, timeBlocks: number) => {
-    const slots: SessionForm['timeSlots'] = []
+  // Handle session creation with specified status
+  const handleCreateSession = async (
+    status: 'draft' | 'voting',
+  ): Promise<void> => {
+    try {
+      // Validate form first
+      await form.handleSubmit()
 
-    // Set the maximum end time to 11:00 PM on the same day as the input date
-    const maxEndTime = new Date(date)
-    maxEndTime.setHours(23, 0, 0, 0)
+      // If validation passed, create session
+      const formValues = form.state.values
+      const sessionId = await createSession({
+        data: { ...formValues, status },
+      })
 
-    let currentTime = new Date(date)
+      // Invalidate venues query to refresh the list with the newly added venue
+      await queryClient.invalidateQueries({ queryKey: ['venues'] })
 
-    // Generate slots until 11 PM
-    while (true) {
-      const endTime = addMinutes(currentTime, timeBlocks)
-
-      // Check if end time would go beyond 11 PM
-      if (isAfter(endTime, maxEndTime)) {
-        break
+      // Show success message
+      if (status === 'draft') {
+        toast.success('Session saved as draft')
+      } else {
+        toast.success('Session published successfully')
       }
 
-      slots.push({
-        id: format(currentTime, 'HH:mm') + '-' + format(endTime, 'HH:mm'),
-        range: [new Date(currentTime), new Date(endTime)],
+      // Navigate to the session page
+      router.navigate({
+        to: '/sessions/$id',
+        params: { id: sessionId },
       })
-      currentTime = endTime
-    }
+    } catch (error) {
+      console.error('Error creating session:', error)
 
-    return slots
+      // Show error toast
+      const errorMessage =
+        error instanceof Error ? error.message : 'An unexpected error occurred'
+      toast.error('Failed to create session', {
+        description: errorMessage,
+      })
+    }
   }
+
   return (
     <form
       className="flex flex-col gap-6"
@@ -199,7 +208,8 @@ function NewSession() {
             venueName: state.values.venueName,
             venueLocation: state.values.venueLocation,
           })}
-          children={({ venueName, venueLocation }) => (
+        >
+          {({ venueName, venueLocation }) => (
             <Field>
               <FieldLabel htmlFor="venue">Venue</FieldLabel>
               <PlaceSearchCombobox
@@ -221,10 +231,9 @@ function NewSession() {
               </FieldDescription>
             </Field>
           )}
-        />
-        <form.Field
-          name="date"
-          children={(field) => {
+        </form.Subscribe>
+        <form.Field name="date">
+          {(field) => {
             const isInvalid =
               field.state.meta.isTouched && !field.state.meta.isValid
             return (
@@ -240,10 +249,9 @@ function NewSession() {
               </Field>
             )
           }}
-        />
-        <form.Field
-          name="votingClosesAt"
-          children={(field) => {
+        </form.Field>
+        <form.Field name="votingClosesAt">
+          {(field) => {
             const isInvalid =
               field.state.meta.isTouched && !field.state.meta.isValid
             return (
@@ -264,11 +272,10 @@ function NewSession() {
               </Field>
             )
           }}
-        />
+        </form.Field>
         <FieldSeparator />
-        <form.Field
-          name="timeBlocks"
-          children={(field) => {
+        <form.Field name="timeBlocks">
+          {(field) => {
             const isInvalid =
               field.state.meta.isTouched && !field.state.meta.isValid
             return (
@@ -284,8 +291,17 @@ function NewSession() {
                   onValueChange={(value) => {
                     if (value) {
                       field.handleChange(value)
-                      // Clear up selected timeSlots when this happens
-                      field.form.setFieldValue?.('timeSlots', [])
+                      // Clear up selected timeSlots for all levels when this happens
+                      const currentLevels = field.form.getFieldValue('levels')
+                      if (currentLevels) {
+                        field.form.setFieldValue(
+                          'levels',
+                          currentLevels.map((level: any) => ({
+                            ...level,
+                            timeSlots: [],
+                          })),
+                        )
+                      }
                     }
                   }}
                   aria-invalid={isInvalid}
@@ -300,142 +316,178 @@ function NewSession() {
               </Field>
             )
           }}
-        />
-        <form.Field
-          name="levels"
-          mode="array"
-          children={(field) => {
-            const isInvalid =
-              field.state.meta.isTouched && !field.state.meta.isValid
-            const levelOptions = [
-              {
-                value: 'beginner',
-                label: 'Beginner',
-                description: 'New to padel or learning the basics.',
-              },
-              {
-                value: 'improver',
-                label: 'Improver',
-                description: 'Basic skills developed, ready to improve.',
-              },
-              {
-                value: 'intermediate',
-                label: 'Intermediate',
-                description: 'Solid technique and game understanding.',
-              },
-              {
-                value: 'advanced',
-                label: 'Advanced',
-                description: 'High-level play with advanced techniques.',
-              },
-            ]
-            return (
-              <FieldGroup data-invalid={isInvalid}>
-                <FieldLabel htmlFor="levels">Available Levels</FieldLabel>
-                <FieldDescription>
-                  Select the set of levels available for the session.
-                </FieldDescription>
-                <div className="flex flex-col gap-3">
-                  {levelOptions.map((option) => (
-                    <FieldLabel
-                      htmlFor={`level-${option.value}`}
-                      key={option.value}
-                    >
-                      <Field orientation="horizontal" data-invalid={isInvalid}>
-                        <FieldContent>
-                          <FieldTitle>{option.label}</FieldTitle>
-                          <FieldDescription>
-                            {option.description}
-                          </FieldDescription>
-                        </FieldContent>
-                        <Checkbox
-                          id={`level-${option.value}`}
-                          aria-invalid={isInvalid}
-                          checked={field.state.value.includes(option.value)}
-                          onCheckedChange={(checked) => {
-                            if (checked) {
-                              field.handleChange([
-                                ...field.state.value,
-                                option.value,
-                              ])
-                            } else {
-                              field.handleChange(
-                                field.state.value.filter(
-                                  (val: string) => val !== option.value,
-                                ),
-                              )
-                            }
-                          }}
-                        />
-                      </Field>
-                    </FieldLabel>
-                  ))}
-                </div>
-                {isInvalid && <FieldError errors={field.state.meta.errors} />}
-              </FieldGroup>
-            )
-          }}
-        />
+        </form.Field>
         <form.Subscribe
           selector={(state) => ({
             date: state.values.date,
             timeBlocks: state.values.timeBlocks,
           })}
-          children={({ date, timeBlocks }) => (
-            <form.Field
-              name="timeSlots"
-              mode="array"
-              children={(field) => {
+        >
+          {({ date, timeBlocks }) => (
+            <form.Field name="levels" mode="array">
+              {(field) => {
                 const isInvalid =
                   field.state.meta.isTouched && !field.state.meta.isValid
+                const levelOptions = [
+                  {
+                    value: 'beginner',
+                    label: 'Beginner',
+                    description: 'New to padel or learning the basics.',
+                  },
+                  {
+                    value: 'improver',
+                    label: 'Improver',
+                    description: 'Basic skills developed, ready to improve.',
+                  },
+                  {
+                    value: 'intermediate',
+                    label: 'Intermediate',
+                    description: 'Solid technique and game understanding.',
+                  },
+                  {
+                    value: 'advanced',
+                    label: 'Advanced',
+                    description: 'High-level play with advanced techniques.',
+                  },
+                ]
+
                 const timeSlotOptions = generateTimeSlots(
                   new Date(date),
-                  parseInt(timeBlocks),
+                  parseInt(timeBlocks, 10),
                 )
                 return (
                   <FieldGroup data-invalid={isInvalid}>
-                    <FieldLabel htmlFor="time-slots">
-                      Available Time Slots
-                    </FieldLabel>
+                    <FieldLabel htmlFor="levels">Available Levels</FieldLabel>
                     <FieldDescription>
-                      Select the time slots available for the session.
+                      Select the set of levels available for the session.
                     </FieldDescription>
-                    <div className="grid grid-cols-2 gap-3">
-                      {timeSlotOptions.map(({ id, range }) => (
-                        <FieldLabel key={id} htmlFor={`slot-${id}`}>
-                          <Field
-                            orientation="horizontal"
-                            data-invalid={isInvalid}
+                    <div className="flex flex-col gap-3">
+                      {levelOptions.map((option, levelIndex) => {
+                        const levelData = field.state.value.find(
+                          (l: any) => l.level === option.value,
+                        )
+
+                        return (
+                          <Collapsible
+                            key={option.value}
+                            className="border py-3 flex flex-col gap-2"
                           >
-                            <FieldContent>
-                              <FieldTitle>{id}</FieldTitle>
-                            </FieldContent>
-                            <Checkbox
-                              aria-invalid={isInvalid}
-                              id={`slot-${id}`}
-                              checked={field.state.value.some(
-                                (timeSlot: { id: string }) =>
-                                  timeSlot.id === id,
-                              )}
-                              onCheckedChange={(checked) => {
-                                if (checked) {
-                                  field.handleChange([
-                                    ...field.state.value,
-                                    { id, range },
-                                  ])
-                                } else {
-                                  field.handleChange(
-                                    field.state.value.filter(
-                                      (timeSlot: { id: string }) =>
-                                        timeSlot.id !== id,
-                                    ),
-                                  )
-                                }
-                              }}
-                            />
-                          </Field>
-                        </FieldLabel>
-                      ))}
+                            <div className="flex items-center justify-between gap-4 px-4">
+                              <div className="flex items-center gap-2">
+                                <h4 className="text-sm">{option.label}</h4>
+                                <Badge
+                                  className="font-mono w-8 h-6 p-0 flex items-center justify-center"
+                                  variant={
+                                    levelData.timeSlots.length === 0
+                                      ? 'outline'
+                                      : 'default'
+                                  }
+                                >
+                                  <ClientOnly
+                                    fallback={levelData.timeSlots.length}
+                                  >
+                                    <AnimatedCounter
+                                      value={levelData.timeSlots.length}
+                                    />
+                                  </ClientOnly>
+                                </Badge>
+                              </div>
+                              <CollapsibleTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="size-8"
+                                >
+                                  <ChevronsUpDown />
+                                  <span className="sr-only">Toggle</span>
+                                </Button>
+                              </CollapsibleTrigger>
+                            </div>
+                            <CollapsibleContent className="px-4 overflow-hidden">
+                              <ScrollArea className="whitespace-nowrap">
+                                <div className="flex w-max gap-2">
+                                  {timeSlotOptions.map(({ id, range }) => (
+                                    <FieldLabel
+                                      key={`${option.value}-${id}`}
+                                      htmlFor={`slot-${option.value}-${id}`}
+                                    >
+                                      <Field
+                                        orientation="horizontal"
+                                        data-invalid={isInvalid}
+                                        className="!p-2"
+                                      >
+                                        <FieldContent>
+                                          <FieldTitle>{id}</FieldTitle>
+                                        </FieldContent>
+                                        <Checkbox
+                                          hidden
+                                          aria-invalid={isInvalid}
+                                          id={`slot-${option.value}-${id}`}
+                                          checked={
+                                            levelData?.timeSlots.some(
+                                              (timeSlot: { id: string }) =>
+                                                timeSlot.id === id,
+                                            ) ?? false
+                                          }
+                                          onCheckedChange={(checked) => {
+                                            const currentLevels =
+                                              field.state.value
+                                            const existingLevelIndex =
+                                              currentLevels.findIndex(
+                                                (l: any) =>
+                                                  l.level === option.value,
+                                              )
+
+                                            if (existingLevelIndex >= 0) {
+                                              // Level exists, update its timeSlots
+                                              const existingLevel =
+                                                currentLevels[
+                                                  existingLevelIndex
+                                                ]
+                                              const updatedTimeSlots = checked
+                                                ? [
+                                                    ...existingLevel.timeSlots,
+                                                    { id, range },
+                                                  ]
+                                                : existingLevel.timeSlots.filter(
+                                                    (ts: any) => ts.id !== id,
+                                                  )
+
+                                              const updatedLevels = [
+                                                ...currentLevels,
+                                              ]
+                                              updatedLevels[
+                                                existingLevelIndex
+                                              ] = {
+                                                ...existingLevel,
+                                                timeSlots: updatedTimeSlots,
+                                              }
+                                              field.handleChange(updatedLevels)
+                                            } else if (checked) {
+                                              // Level doesn't exist, add it with the time slot
+                                              field.handleChange([
+                                                ...currentLevels,
+                                                {
+                                                  level: option.value,
+                                                  timeSlots: [{ id, range }],
+                                                },
+                                              ])
+                                            }
+                                          }}
+                                        />
+                                      </Field>
+                                    </FieldLabel>
+                                  ))}
+                                </div>
+                                <ScrollBar
+                                  orientation="horizontal"
+                                  className="hidden"
+                                />
+                              </ScrollArea>
+                            </CollapsibleContent>
+                          </Collapsible>
+                        )
+                      })}
                     </div>
                     {isInvalid && (
                       <FieldError errors={field.state.meta.errors} />
@@ -443,9 +495,9 @@ function NewSession() {
                   </FieldGroup>
                 )
               }}
-            />
+            </form.Field>
           )}
-        />
+        </form.Subscribe>
         <FieldSeparator />
         <form.Field name="limitPlayers">
           {(limitPlayersField) => (
@@ -486,7 +538,7 @@ function NewSession() {
                         min={1}
                         value={field.state.value}
                         onChange={(e) =>
-                          field.handleChange(parseInt(e.target.value))
+                          field.handleChange(parseInt(e.target.value, 10))
                         }
                         aria-invalid={
                           field.state.meta.isTouched &&
@@ -508,54 +560,47 @@ function NewSession() {
           selector={(state) => {
             return { isSubmitting: state.isSubmitting }
           }}
-          children={({ isSubmitting }) => (
-            <Field>
-              <Button type="submit" disabled={isSubmitting}>
+        >
+          {({ isSubmitting }) => (
+            <ButtonGroup className="w-full">
+              <Button
+                type="button"
+                onClick={() => handleCreateSession('voting')}
+                disabled={isSubmitting}
+                className="flex-1 rounded-r-none"
+              >
                 {isSubmitting && (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 )}
-                {isSubmitting ? 'Creating session...' : 'Create a session'}
+                {isSubmitting ? 'Creating session...' : 'Publish'}
               </Button>
-              <Dialog>
-                <DialogTrigger asChild>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
                   <Button
-                    variant="outline"
                     type="button"
-                    className="w-full"
                     disabled={isSubmitting}
+                    className="rounded-l-none border-l"
+                    size="icon"
                   >
-                    Save as a template
+                    <ChevronDown className="h-4 w-4" />
                   </Button>
-                </DialogTrigger>
-                <DialogContent className="sm:max-w-[425px]">
-                  <DialogHeader>
-                    <DialogTitle>Save as a template</DialogTitle>
-                    <DialogDescription>
-                      Saving a session as a template will save all of your
-                      selections except the date.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <FieldGroup>
-                    <Field>
-                      <FieldLabel htmlFor="template-name">Name</FieldLabel>
-                      <Input
-                        id="template-name"
-                        name="name"
-                        autoComplete="off"
-                      />
-                    </Field>
-                  </FieldGroup>
-                  <DialogFooter>
-                    <DialogClose asChild>
-                      <Button variant="outline">Cancel</Button>
-                    </DialogClose>
-                    <Button type="submit">Save template</Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-            </Field>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    onSelect={() => handleCreateSession('voting')}
+                  >
+                    Publish
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={() => handleCreateSession('draft')}
+                  >
+                    Save as draft
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </ButtonGroup>
           )}
-        />
+        </form.Subscribe>
       </FieldSet>
     </form>
   )

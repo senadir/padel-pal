@@ -1,9 +1,15 @@
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { format } from 'date-fns'
 import { useEffect, useMemo, useState } from 'react'
-import { EllipsisVertical, ExternalLink } from 'lucide-react'
-import { queryOptions, useQuery, useSuspenseQuery } from '@tanstack/react-query'
+import { EllipsisVertical, ExternalLink, Loader2 } from 'lucide-react'
+import {
+  queryOptions,
+  useMutation,
+  useQuery,
+  useSuspenseQuery,
+} from '@tanstack/react-query'
 import { z } from 'zod'
+import { toast } from 'sonner'
 import type { Option, Player, Session } from '@/utils/types'
 import {
   Field,
@@ -35,7 +41,11 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { fetchSession, useVoteForSession } from '@/utils/sessions'
+import {
+  deleteSession,
+  fetchSession,
+  useVoteForSession,
+} from '@/utils/sessions'
 import { useAuth, useIsOrganizer } from '@/contexts/auth'
 import {
   DrawerDialog,
@@ -46,6 +56,17 @@ import {
   DrawerDialogHeader,
   DrawerDialogTitle,
 } from '@/components/ui/drawer-dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 
 export const Route = createFileRoute('/sessions/$id')({
   component: RouteComponent,
@@ -83,6 +104,23 @@ function RouteComponent() {
   const { authData } = useAuth()
   const navigate = useNavigate({ from: Route.fullPath })
   const isOrganizer = useIsOrganizer()
+
+  // Delete session mutation
+  const deleteSessionMutation = useMutation({
+    mutationFn: () => deleteSession({ data: { sessionPublicId: id } }),
+    onSuccess: () => {
+      toast.success('Session deleted successfully')
+      navigate({ to: '/' })
+    },
+    onError: (error) => {
+      console.error('Error deleting session:', error)
+      const errorMessage =
+        error instanceof Error ? error.message : 'An unexpected error occurred'
+      toast.error('Failed to delete session', {
+        description: errorMessage,
+      })
+    },
+  })
 
   // Check if user is fully authenticated
   const currentUser = authData?.player
@@ -192,9 +230,39 @@ function RouteComponent() {
                     : `Close poll and create ${generatedGamesCount} options`}
                 </Link>
               </Button>
-              <Button variant="outline" type="button" className="w-full">
-                Remove session
-              </Button>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant="outline"
+                    type="button"
+                    className="w-full"
+                    disabled={deleteSessionMutation.isPending}
+                  >
+                    {deleteSessionMutation.isPending && (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    )}
+                    Delete session
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This will permanently delete this session and all
+                      associated votes. This action cannot be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      variant="destructive"
+                      onClick={() => deleteSessionMutation.mutate()}
+                    >
+                      Delete
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </Field>
           </>
         )}

@@ -10,17 +10,17 @@ import { z } from 'zod'
 import { toast } from 'sonner'
 import ShortUniqueId from 'short-unique-id'
 import {
+  format,
   formatISO,
+  getHours,
+  getMinutes,
   setHours,
   setMinutes,
-  getMinutes,
-  getHours,
-  format,
 } from 'date-fns'
 import { getMockSession } from './mock'
 import { getSupabaseServerClient } from './supabase'
-import type { Match, Player, Session, SessionForm } from './types'
 import { upsertVenue } from './venues'
+import type { Match, Player, Session, SessionForm } from './types'
 
 export const fetchSessions = createServerFn({ method: 'GET' }).handler(
   async () => {
@@ -233,9 +233,9 @@ export const fetchMatches = createServerFn({ method: 'GET' })
 
       // Transform database matches to Match type
       const matches = matchesData.map((match) => {
-        const participants = (match.match_participants as any[]) || []
+        const participants = (match.match_participants as Array<any>) || []
         const players = participants.map((p) => ({
-          ...(p.players as any),
+          ...p.players,
           status: 'draft' as const, // Default status for now
         }))
 
@@ -489,8 +489,8 @@ export const generateMatches = createServerFn({ method: 'POST' })
         ? JSON.parse(sessionRow.time_slots)
         : sessionRow.time_slots
 
-    const matchesToCreate: any[] = []
-    const participantsToCreate: any[] = []
+    const matchesToCreate: Array<any> = []
+    const participantsToCreate: Array<any> = []
 
     // Group votes by time slot and level
     for (const timeSlot of timeSlots) {
@@ -815,7 +815,10 @@ export const useMatchActions = ({
     },
     onSuccess: (_data, matchPublicId) => {
       // Get match data from query cache
-      const matches = queryClient.getQueryData<Match[]>(['matches', sessionId])
+      const matches = queryClient.getQueryData<Array<Match>>([
+        'matches',
+        sessionId,
+      ])
       const match = matches?.find((m) => m.id === matchPublicId)
 
       if (match) {
@@ -851,7 +854,10 @@ export const useMatchActions = ({
     },
     onSuccess: (_data, matchPublicId) => {
       // Get match data from query cache
-      const matches = queryClient.getQueryData<Match[]>(['matches', sessionId])
+      const matches = queryClient.getQueryData<Array<Match>>([
+        'matches',
+        sessionId,
+      ])
       const match = matches?.find((m) => m.id === matchPublicId)
 
       if (match) {
@@ -894,12 +900,19 @@ export const createSessionValidator: z.ZodType<SessionForm> = z.object({
     .url({ message: 'Please enter a valid URL for the venue' }),
   date: z.date(),
   levels: z
-    .array(z.string())
-    .min(1, { message: 'At least one level must be selected' }),
+    .array(
+      z.object({
+        level: z.string(),
+        timeSlots: z.array(
+          z.object({ id: z.string(), range: z.tuple([z.date(), z.date()]) }),
+        ),
+      }),
+    )
+    .min(1, { message: 'At least one level must be selected' })
+    .refine((levels) => levels.some((level) => level.timeSlots.length > 0), {
+      message: 'At least one time slot must be selected for at least one level',
+    }),
   timeBlocks: z.enum(['60', '90']),
-  timeSlots: z
-    .array(z.object({ id: z.string(), range: z.tuple([z.date(), z.date()]) }))
-    .min(1, { message: 'At least one time slot must be selected' }),
   limitPlayers: z.boolean(),
   playersPerSlot: z
     .number()
@@ -910,73 +923,227 @@ export const createSessionValidator: z.ZodType<SessionForm> = z.object({
 })
 
 export const createSession = createServerFn({ method: 'POST' })
-  .inputValidator(zodValidator(createSessionValidator))
-  .handler(async ({ data }: { data: SessionForm }): Promise<string> => {
+  .inputValidator(
+    zodValidator(
+      createSessionValidator.extend({
+        status: z
+          .enum(['draft', 'voting', 'open', 'cancelled', 'closed'])
+          .default('voting'),
+      }),
+    ),
+  )
+  .handler(
+    async ({
+      data,
+    }: {
+      data: SessionForm & {
+        status?: 'draft' | 'voting' | 'open' | 'cancelled' | 'closed'
+      }
+    }): Promise<string> => {
+      try {
+        const supabase = getSupabaseServerClient()
+
+        // Save venue to database for future autocomplete
+        const { venueName, venueLocation, venuePlaceId } = data
+        if (venueName && venueLocation) {
+          try {
+            await upsertVenue({
+              data: {
+                label: venueName,
+                mapsUrl: venueLocation,
+                placeId: venuePlaceId,
+              },
+            })
+          } catch (error) {
+            // Log error but don't fail session creation
+            console.error('Error saving venue:', error)
+          }
+        }
+
+        // Generate unique session ID
+        const uid = new ShortUniqueId({ length: 8 })
+
+        // Transform the nested structure into the database format
+        // Collect all unique time slots from all levels
+        const allTimeSlotsMap = new Map<
+          string,
+          { id: string; range: [Date, Date] }
+        >()
+        data.levels.forEach((levelData) => {
+          levelData.timeSlots.forEach((timeSlot) => {
+            if (!allTimeSlotsMap.has(timeSlot.id)) {
+              allTimeSlotsMap.set(timeSlot.id, timeSlot)
+            }
+          })
+        })
+
+        // Build time slots with options
+        const timeSlots = Array.from(allTimeSlotsMap.values()).map(
+          (timeSlot) => {
+            // For each time slot, find which levels have it
+            const options = data.levels
+              .filter((levelData) =>
+                levelData.timeSlots.some((ts) => ts.id === timeSlot.id),
+              )
+              .map((levelData) => ({
+                id: uid.rnd(),
+                slot: timeSlot,
+                level: levelData.level,
+                players: [],
+              }))
+
+            return {
+              id: timeSlot.id,
+              range: timeSlot.range,
+              options,
+            }
+          },
+        )
+
+        // Insert session into Supabase
+        const sessionData = {
+          public_id: uid.rnd(),
+          venue_name: data.venueName,
+          venue_location: data.venueLocation,
+          // Combine session.date and session.time into a single ISO datetime string for the "date" field.
+          date: formatISO(data.date),
+          levels: data.levels.map((l) => l.level),
+          time_blocks: parseInt(data.timeBlocks),
+          time_slots: JSON.stringify(timeSlots),
+          limit_players: data.limitPlayers,
+          players_per_slot: data.playersPerSlot,
+          status: data.status || 'voting',
+          voting_closes_at: data.votingClosesAt
+            ? formatISO(data.votingClosesAt)
+            : null,
+        }
+
+        const { data: session, error } = await supabase
+          .from('sessions')
+          .insert(sessionData)
+          .select()
+          .single()
+
+        if (error) {
+          throw new Error(`Failed to create session: ${error.message}`)
+        }
+
+        return session.public_id
+      } catch (error) {
+        console.error('Error in createSession:', error)
+        throw error
+      }
+    },
+  )
+
+// Save session as template
+export const saveSessionTemplate = createServerFn({ method: 'POST' })
+  .inputValidator(
+    zodValidator(
+      z.object({
+        name: z.string().min(1, { message: 'Template name is required' }),
+        templateData: z.object({
+          venueName: z.string().optional(),
+          venueLocation: z.string().optional(),
+          venuePlaceId: z.string().optional(),
+          levels: z.array(z.string()),
+          timeBlocks: z.enum(['60', '90']),
+          timeSlots: z.array(z.object({ id: z.string() })).optional(),
+          limitPlayers: z.boolean(),
+          playersPerSlot: z.number().optional(),
+        }),
+      }),
+    ),
+  )
+  .handler(async ({ data }) => {
     try {
       const supabase = getSupabaseServerClient()
 
-      // Save venue to database for future autocomplete
-      const { venueName, venueLocation, venuePlaceId } = data
-      if (venueName && venueLocation) {
-        try {
-          await upsertVenue({
-            data: {
-              label: venueName,
-              mapsUrl: venueLocation,
-              placeId: venuePlaceId,
-            },
-          })
-        } catch (error) {
-          // Log error but don't fail session creation
-          console.error('Error saving venue:', error)
-        }
+      // Get current user
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+
+      if (!user) {
+        throw new Error('User not authenticated')
       }
 
-      // Generate unique session ID
-      const uid = new ShortUniqueId({ length: 8 })
-
-      // Insert session into Supabase
-      const sessionData = {
-        public_id: uid.rnd(),
-        venue_name: data.venueName,
-        venue_location: data.venueLocation,
-        // Combine session.date and session.time into a single ISO datetime string for the "date" field.
-        date: formatISO(data.date),
-        levels: data.levels,
-        time_blocks: parseInt(data.timeBlocks),
-        time_slots: JSON.stringify(
-          data.timeSlots.map((timeSlot) => ({
-            id: timeSlot.id,
-            range: timeSlot.range,
-            options: data.levels.map((level) => ({
-              id: uid.rnd(),
-              slot: timeSlot,
-              level,
-              players: [],
-            })),
-          })),
-        ),
-        limit_players: data.limitPlayers,
-        players_per_slot: data.playersPerSlot,
-        status: 'draft' as const, // Always create sessions as draft
-        voting_closes_at: data.votingClosesAt
-          ? formatISO(data.votingClosesAt)
-          : null,
-      }
-
-      const { data: session, error } = await supabase
-        .from('sessions')
-        .insert(sessionData)
+      // Insert template
+      const { data: template, error } = await supabase
+        .from('session_templates')
+        .insert({
+          name: data.name,
+          created_by: user.id,
+          template_data: data.templateData,
+        })
         .select()
         .single()
 
       if (error) {
-        throw new Error(`Failed to create session: ${error.message}`)
+        throw new Error(`Failed to save template: ${error.message}`)
       }
 
-      return session.public_id
+      return { success: true, templateId: template.id }
     } catch (error) {
-      console.error('Error in createSession:', error)
+      console.error('Error in saveSessionTemplate:', error)
+      throw error
+    }
+  })
+
+// Fetch all templates
+export const fetchSessionTemplates = createServerFn({ method: 'GET' }).handler(
+  async () => {
+    try {
+      const supabase = getSupabaseServerClient()
+
+      const { data: templates, error } = await supabase
+        .from('session_templates')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        throw new Error(`Failed to fetch templates: ${error.message}`)
+      }
+
+      return templates
+    } catch (error) {
+      console.error('Error in fetchSessionTemplates:', error)
+      throw error
+    }
+  },
+)
+
+// Delete session
+export const deleteSession = createServerFn({ method: 'POST' })
+  .inputValidator(zodValidator(z.object({ sessionPublicId: z.string() })))
+  .handler(async ({ data }) => {
+    try {
+      const supabase = getSupabaseServerClient()
+
+      // Get session ID from public_id
+      const { data: sessionRow, error: sessionError } = await supabase
+        .from('sessions')
+        .select('id')
+        .eq('public_id', data.sessionPublicId)
+        .single()
+
+      if (sessionError || !sessionRow) {
+        throw new Error('Session not found')
+      }
+
+      // Delete session (cascading deletes will handle related records)
+      const { error: deleteError } = await supabase
+        .from('sessions')
+        .delete()
+        .eq('id', sessionRow.id)
+
+      if (deleteError) {
+        throw new Error(`Failed to delete session: ${deleteError.message}`)
+      }
+
+      return { success: true }
+    } catch (error) {
+      console.error('Error in deleteSession:', error)
       throw error
     }
   })

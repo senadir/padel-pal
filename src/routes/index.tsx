@@ -9,7 +9,7 @@ import { useEffect } from 'react'
 import { toast } from 'sonner'
 import { useSuspenseQuery } from '@tanstack/react-query'
 import { sessionsQueryOptions } from '@/utils/sessions'
-import { format, isBefore } from 'date-fns'
+import { format } from 'date-fns'
 import { Button } from '@/components/ui/button'
 import { ChevronRight, CalendarPlus } from 'lucide-react'
 import {
@@ -101,9 +101,9 @@ function App() {
           <EmptyContent>
             <div className="flex gap-2">
               {isOrganizer && (
-                <Link to="/sessions/new">
-                  <Button>Create Session</Button>
-                </Link>
+                <Button asChild>
+                  <Link to="/sessions/new">Create Session</Link>
+                </Button>
               )}
               <Button variant="outline">Get updated</Button>
             </div>
