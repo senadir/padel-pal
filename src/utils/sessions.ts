@@ -10,17 +10,17 @@ import { z } from 'zod'
 import { toast } from 'sonner'
 import ShortUniqueId from 'short-unique-id'
 import {
+  format,
   formatISO,
+  getHours,
+  getMinutes,
   setHours,
   setMinutes,
-  getMinutes,
-  getHours,
-  format,
 } from 'date-fns'
 import { getMockSession } from './mock'
 import { getSupabaseServerClient } from './supabase'
-import type { Match, Player, Session, SessionForm } from './types'
 import { upsertVenue } from './venues'
+import type { Match, Player, Session, SessionForm } from './types'
 
 export const fetchSessions = createServerFn({ method: 'GET' }).handler(
   async () => {
@@ -233,9 +233,9 @@ export const fetchMatches = createServerFn({ method: 'GET' })
 
       // Transform database matches to Match type
       const matches = matchesData.map((match) => {
-        const participants = (match.match_participants as any[]) || []
+        const participants = (match.match_participants as Array<any>) || []
         const players = participants.map((p) => ({
-          ...(p.players as any),
+          ...p.players,
           status: 'draft' as const, // Default status for now
         }))
 
@@ -489,8 +489,8 @@ export const generateMatches = createServerFn({ method: 'POST' })
         ? JSON.parse(sessionRow.time_slots)
         : sessionRow.time_slots
 
-    const matchesToCreate: any[] = []
-    const participantsToCreate: any[] = []
+    const matchesToCreate: Array<any> = []
+    const participantsToCreate: Array<any> = []
 
     // Group votes by time slot and level
     for (const timeSlot of timeSlots) {
@@ -815,7 +815,10 @@ export const useMatchActions = ({
     },
     onSuccess: (_data, matchPublicId) => {
       // Get match data from query cache
-      const matches = queryClient.getQueryData<Match[]>(['matches', sessionId])
+      const matches = queryClient.getQueryData<Array<Match>>([
+        'matches',
+        sessionId,
+      ])
       const match = matches?.find((m) => m.id === matchPublicId)
 
       if (match) {
@@ -851,7 +854,10 @@ export const useMatchActions = ({
     },
     onSuccess: (_data, matchPublicId) => {
       // Get match data from query cache
-      const matches = queryClient.getQueryData<Match[]>(['matches', sessionId])
+      const matches = queryClient.getQueryData<Array<Match>>([
+        'matches',
+        sessionId,
+      ])
       const match = matches?.find((m) => m.id === matchPublicId)
 
       if (match) {
@@ -894,12 +900,19 @@ export const createSessionValidator: z.ZodType<SessionForm> = z.object({
     .url({ message: 'Please enter a valid URL for the venue' }),
   date: z.date(),
   levels: z
-    .array(z.string())
-    .min(1, { message: 'At least one level must be selected' }),
+    .array(
+      z.object({
+        level: z.string(),
+        timeSlots: z.array(
+          z.object({ id: z.string(), range: z.tuple([z.date(), z.date()]) }),
+        ),
+      }),
+    )
+    .min(1, { message: 'At least one level must be selected' })
+    .refine((levels) => levels.some((level) => level.timeSlots.length > 0), {
+      message: 'At least one time slot must be selected for at least one level',
+    }),
   timeBlocks: z.enum(['60', '90']),
-  timeSlots: z
-    .array(z.object({ id: z.string(), range: z.tuple([z.date(), z.date()]) }))
-    .min(1, { message: 'At least one time slot must be selected' }),
   limitPlayers: z.boolean(),
   playersPerSlot: z
     .number()
@@ -950,6 +963,43 @@ export const createSession = createServerFn({ method: 'POST' })
         // Generate unique session ID
         const uid = new ShortUniqueId({ length: 8 })
 
+        // Transform the nested structure into the database format
+        // Collect all unique time slots from all levels
+        const allTimeSlotsMap = new Map<
+          string,
+          { id: string; range: [Date, Date] }
+        >()
+        data.levels.forEach((levelData) => {
+          levelData.timeSlots.forEach((timeSlot) => {
+            if (!allTimeSlotsMap.has(timeSlot.id)) {
+              allTimeSlotsMap.set(timeSlot.id, timeSlot)
+            }
+          })
+        })
+
+        // Build time slots with options
+        const timeSlots = Array.from(allTimeSlotsMap.values()).map(
+          (timeSlot) => {
+            // For each time slot, find which levels have it
+            const options = data.levels
+              .filter((levelData) =>
+                levelData.timeSlots.some((ts) => ts.id === timeSlot.id),
+              )
+              .map((levelData) => ({
+                id: uid.rnd(),
+                slot: timeSlot,
+                level: levelData.level,
+                players: [],
+              }))
+
+            return {
+              id: timeSlot.id,
+              range: timeSlot.range,
+              options,
+            }
+          },
+        )
+
         // Insert session into Supabase
         const sessionData = {
           public_id: uid.rnd(),
@@ -957,20 +1007,9 @@ export const createSession = createServerFn({ method: 'POST' })
           venue_location: data.venueLocation,
           // Combine session.date and session.time into a single ISO datetime string for the "date" field.
           date: formatISO(data.date),
-          levels: data.levels,
+          levels: data.levels.map((l) => l.level),
           time_blocks: parseInt(data.timeBlocks),
-          time_slots: JSON.stringify(
-            data.timeSlots.map((timeSlot) => ({
-              id: timeSlot.id,
-              range: timeSlot.range,
-              options: data.levels.map((level) => ({
-                id: uid.rnd(),
-                slot: timeSlot,
-                level,
-                players: [],
-              })),
-            })),
-          ),
+          time_slots: JSON.stringify(timeSlots),
           limit_players: data.limitPlayers,
           players_per_slot: data.playersPerSlot,
           status: data.status || 'voting',

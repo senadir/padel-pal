@@ -2,7 +2,7 @@ import { formOptions, useForm } from '@tanstack/react-form'
 import { useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, redirect, useRouter } from '@tanstack/react-router'
 import { addMinutes, format, isAfter, parse } from 'date-fns'
-import { ChevronDown, Loader2 } from 'lucide-react'
+import { ChevronDown, ChevronsUpDown, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { SessionForm } from '@/utils/types'
 import { PlaceSearchCombobox } from '@/components/place-search-combobox'
@@ -16,6 +16,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { Badge } from '@/components/ui/badge'
 import {
   Field,
   FieldContent,
@@ -28,6 +29,12 @@ import {
   FieldSet,
   FieldTitle,
 } from '@/components/ui/field'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible'
+import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'
 import { Input } from '@/components/ui/input'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { createSession, createSessionValidator } from '@/utils/sessions'
@@ -42,31 +49,13 @@ const defaultSession: SessionForm = {
     return date
   })(),
   votingClosesAt: undefined,
-  levels: ['beginner', 'improver', 'intermediate'],
-  timeBlocks: '60',
-  timeSlots: [
-    {
-      id: '16:00-17:00',
-      range: [
-        parse('16:00', 'HH:mm', new Date()),
-        parse('17:00', 'HH:mm', new Date()),
-      ],
-    },
-    {
-      id: '17:00-18:00',
-      range: [
-        parse('17:00', 'HH:mm', new Date()),
-        parse('18:00', 'HH:mm', new Date()),
-      ],
-    },
-    {
-      id: '18:00-19:00',
-      range: [
-        parse('18:00', 'HH:mm', new Date()),
-        parse('19:00', 'HH:mm', new Date()),
-      ],
-    },
+  levels: [
+    { level: 'beginner', timeSlots: [] },
+    { level: 'improver', timeSlots: [] },
+    { level: 'intermediate', timeSlots: [] },
+    { level: 'advanced', timeSlots: [] },
   ],
+  timeBlocks: '60',
   limitPlayers: false,
   playersPerSlot: 4,
 }
@@ -296,8 +285,17 @@ function NewSession() {
                   onValueChange={(value) => {
                     if (value) {
                       field.handleChange(value)
-                      // Clear up selected timeSlots when this happens
-                      field.form.setFieldValue('timeSlots', [])
+                      // Clear up selected timeSlots for all levels when this happens
+                      const currentLevels = field.form.getFieldValue('levels')
+                      if (currentLevels) {
+                        field.form.setFieldValue(
+                          'levels',
+                          currentLevels.map((level: any) => ({
+                            ...level,
+                            timeSlots: [],
+                          })),
+                        )
+                      }
                     }
                   }}
                   aria-invalid={isInvalid}
@@ -313,79 +311,6 @@ function NewSession() {
             )
           }}
         </form.Field>
-        <form.Field name="levels" mode="array">
-          {(field) => {
-            const isInvalid =
-              field.state.meta.isTouched && !field.state.meta.isValid
-            const levelOptions = [
-              {
-                value: 'beginner',
-                label: 'Beginner',
-                description: 'New to padel or learning the basics.',
-              },
-              {
-                value: 'improver',
-                label: 'Improver',
-                description: 'Basic skills developed, ready to improve.',
-              },
-              {
-                value: 'intermediate',
-                label: 'Intermediate',
-                description: 'Solid technique and game understanding.',
-              },
-              {
-                value: 'advanced',
-                label: 'Advanced',
-                description: 'High-level play with advanced techniques.',
-              },
-            ]
-            return (
-              <FieldGroup data-invalid={isInvalid}>
-                <FieldLabel htmlFor="levels">Available Levels</FieldLabel>
-                <FieldDescription>
-                  Select the set of levels available for the session.
-                </FieldDescription>
-                <div className="flex flex-col gap-3">
-                  {levelOptions.map((option) => (
-                    <FieldLabel
-                      htmlFor={`level-${option.value}`}
-                      key={option.value}
-                    >
-                      <Field orientation="horizontal" data-invalid={isInvalid}>
-                        <FieldContent>
-                          <FieldTitle>{option.label}</FieldTitle>
-                          <FieldDescription>
-                            {option.description}
-                          </FieldDescription>
-                        </FieldContent>
-                        <Checkbox
-                          id={`level-${option.value}`}
-                          aria-invalid={isInvalid}
-                          checked={field.state.value.includes(option.value)}
-                          onCheckedChange={(checked) => {
-                            if (checked) {
-                              field.handleChange([
-                                ...field.state.value,
-                                option.value,
-                              ])
-                            } else {
-                              field.handleChange(
-                                field.state.value.filter(
-                                  (val: string) => val !== option.value,
-                                ),
-                              )
-                            }
-                          }}
-                        />
-                      </Field>
-                    </FieldLabel>
-                  ))}
-                </div>
-                {isInvalid && <FieldError errors={field.state.meta.errors} />}
-              </FieldGroup>
-            )
-          }}
-        </form.Field>
         <form.Subscribe
           selector={(state) => ({
             date: state.values.date,
@@ -393,58 +318,157 @@ function NewSession() {
           })}
         >
           {({ date, timeBlocks }) => (
-            <form.Field name="timeSlots" mode="array">
+            <form.Field name="levels" mode="array">
               {(field) => {
                 const isInvalid =
                   field.state.meta.isTouched && !field.state.meta.isValid
+                const levelOptions = [
+                  {
+                    value: 'beginner',
+                    label: 'Beginner',
+                    description: 'New to padel or learning the basics.',
+                  },
+                  {
+                    value: 'improver',
+                    label: 'Improver',
+                    description: 'Basic skills developed, ready to improve.',
+                  },
+                  {
+                    value: 'intermediate',
+                    label: 'Intermediate',
+                    description: 'Solid technique and game understanding.',
+                  },
+                  {
+                    value: 'advanced',
+                    label: 'Advanced',
+                    description: 'High-level play with advanced techniques.',
+                  },
+                ]
+
                 const timeSlotOptions = generateTimeSlots(
                   new Date(date),
                   parseInt(timeBlocks, 10),
                 )
                 return (
                   <FieldGroup data-invalid={isInvalid}>
-                    <FieldLabel htmlFor="time-slots">
-                      Available Time Slots
-                    </FieldLabel>
+                    <FieldLabel htmlFor="levels">Available Levels</FieldLabel>
                     <FieldDescription>
-                      Select the time slots available for the session.
+                      Select the set of levels available for the session.
                     </FieldDescription>
-                    <div className="grid grid-cols-2 gap-3">
-                      {timeSlotOptions.map(({ id, range }) => (
-                        <FieldLabel key={id} htmlFor={`slot-${id}`}>
-                          <Field
-                            orientation="horizontal"
-                            data-invalid={isInvalid}
+                    <div className="flex flex-col gap-3">
+                      {levelOptions.map((option, levelIndex) => {
+                        const levelData = field.state.value.find(
+                          (l: any) => l.level === option.value,
+                        )
+
+                        return (
+                          <Collapsible
+                            key={option.value}
+                            className="border py-3 flex flex-col gap-2"
                           >
-                            <FieldContent>
-                              <FieldTitle>{id}</FieldTitle>
-                            </FieldContent>
-                            <Checkbox
-                              aria-invalid={isInvalid}
-                              id={`slot-${id}`}
-                              checked={field.state.value.some(
-                                (timeSlot: { id: string }) =>
-                                  timeSlot.id === id,
-                              )}
-                              onCheckedChange={(checked) => {
-                                if (checked) {
-                                  field.handleChange([
-                                    ...field.state.value,
-                                    { id, range },
-                                  ])
-                                } else {
-                                  field.handleChange(
-                                    field.state.value.filter(
-                                      (timeSlot: { id: string }) =>
-                                        timeSlot.id !== id,
-                                    ),
-                                  )
-                                }
-                              }}
-                            />
-                          </Field>
-                        </FieldLabel>
-                      ))}
+                            <div className="flex items-center justify-between gap-4 px-4">
+                              <div className="flex items-center gap-2">
+                                <h4 className="text-sm">{option.label}</h4>
+                                {levelData?.timeSlots.length > 0 && (
+                                  <Badge>{levelData?.timeSlots.length}</Badge>
+                                )}
+                              </div>
+                              <CollapsibleTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="size-8"
+                                >
+                                  <ChevronsUpDown />
+                                  <span className="sr-only">Toggle</span>
+                                </Button>
+                              </CollapsibleTrigger>
+                            </div>
+                            <CollapsibleContent className="px-4 data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down overflow-hidden transition-all duration-300 transition-ease-in-out">
+                              <ScrollArea className="whitespace-nowrap">
+                                <div className="flex w-max gap-2">
+                                  {timeSlotOptions.map(({ id, range }) => (
+                                    <FieldLabel
+                                      key={`${option.value}-${id}`}
+                                      htmlFor={`slot-${option.value}-${id}`}
+                                    >
+                                      <Field
+                                        orientation="horizontal"
+                                        data-invalid={isInvalid}
+                                        className="!p-2"
+                                      >
+                                        <FieldContent>
+                                          <FieldTitle>{id}</FieldTitle>
+                                        </FieldContent>
+                                        <Checkbox
+                                          hidden
+                                          aria-invalid={isInvalid}
+                                          id={`slot-${option.value}-${id}`}
+                                          checked={
+                                            levelData?.timeSlots.some(
+                                              (timeSlot: { id: string }) =>
+                                                timeSlot.id === id,
+                                            ) ?? false
+                                          }
+                                          onCheckedChange={(checked) => {
+                                            const currentLevels =
+                                              field.state.value
+                                            const existingLevelIndex =
+                                              currentLevels.findIndex(
+                                                (l: any) =>
+                                                  l.level === option.value,
+                                              )
+
+                                            if (existingLevelIndex >= 0) {
+                                              // Level exists, update its timeSlots
+                                              const existingLevel =
+                                                currentLevels[
+                                                  existingLevelIndex
+                                                ]
+                                              const updatedTimeSlots = checked
+                                                ? [
+                                                    ...existingLevel.timeSlots,
+                                                    { id, range },
+                                                  ]
+                                                : existingLevel.timeSlots.filter(
+                                                    (ts: any) => ts.id !== id,
+                                                  )
+
+                                              const updatedLevels = [
+                                                ...currentLevels,
+                                              ]
+                                              updatedLevels[
+                                                existingLevelIndex
+                                              ] = {
+                                                ...existingLevel,
+                                                timeSlots: updatedTimeSlots,
+                                              }
+                                              field.handleChange(updatedLevels)
+                                            } else if (checked) {
+                                              // Level doesn't exist, add it with the time slot
+                                              field.handleChange([
+                                                ...currentLevels,
+                                                {
+                                                  level: option.value,
+                                                  timeSlots: [{ id, range }],
+                                                },
+                                              ])
+                                            }
+                                          }}
+                                        />
+                                      </Field>
+                                    </FieldLabel>
+                                  ))}
+                                </div>
+                                <ScrollBar
+                                  orientation="horizontal"
+                                  className="hidden"
+                                />
+                              </ScrollArea>
+                            </CollapsibleContent>
+                          </Collapsible>
+                        )
+                      })}
                     </div>
                     {isInvalid && (
                       <FieldError errors={field.state.meta.errors} />

@@ -1,4 +1,4 @@
-import { Database } from './database.types'
+import type { Database } from './database.types'
 
 export type Player = Database['public']['Tables']['players']['Row']
 export type AppRole = Database['public']['Enums']['app_role']
@@ -29,9 +29,11 @@ export type SessionForm = {
   venueLocation: string
   venuePlaceId?: string
   date: Date
-  levels: Array<string>
+  levels: Array<{
+    level: string
+    timeSlots: Array<{ id: string; range: [Date, Date] }>
+  }>
   timeBlocks: string
-  timeSlots: Array<{ id: string; range: [Date, Date] }>
   limitPlayers: boolean
   playersPerSlot?: number
   votingClosesAt?: Date
@@ -57,7 +59,7 @@ export interface PlaytomicProfile {
   facebook_id: string | null
   privacy_profile: 'PUBLIC' | 'PRIVATE' | 'FRIENDS_ONLY'
   is_premium: boolean
-  tenant_tags: string[]
+  tenant_tags: Array<string>
 }
 
 export type Venue = Database['public']['Tables']['venues']['Row']
