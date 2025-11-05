@@ -186,9 +186,9 @@ function NewSession() {
       toast.error('Failed to create session', {
         description: errorMessage,
       })
+    } finally {
       setIsCreating(false)
     }
-  }
 
   return (
     <form
