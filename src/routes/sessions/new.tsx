@@ -403,7 +403,7 @@ function NewSession() {
                                 </Button>
                               </CollapsibleTrigger>
                             </div>
-                            <CollapsibleContent className="px-4 data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down overflow-hidden transition-all duration-300 transition-ease-in-out">
+                            <CollapsibleContent className="px-4 overflow-hidden">
                               <ScrollArea className="whitespace-nowrap">
                                 <div className="flex w-max gap-2">
                                   {timeSlotOptions.map(({ id, range }) => (
