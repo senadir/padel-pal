@@ -9,6 +9,7 @@ import {
 import { addMinutes, format, isAfter, parse } from 'date-fns'
 import { ChevronDown, ChevronsUpDown, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { useState } from 'react'
 import type { SessionForm } from '@/utils/types'
 import { AnimatedCounter } from '@/components/ui/animated-counter'
 import { PlaceSearchCombobox } from '@/components/place-search-combobox'
@@ -127,12 +128,14 @@ const generateTimeSlots = (date: Date, timeBlocks: number) => {
     currentTime = endTime
   }
 
-  return slots
+  // Sort slots by start time (they should already be sorted, but ensuring it)
+  return slots.sort((a, b) => a.range[0].getTime() - b.range[0].getTime())
 }
 
 function NewSession() {
   const router = useRouter()
   const queryClient = useQueryClient()
+  const [isCreating, setIsCreating] = useState(false)
 
   const sessionFormOptions = formOptions({
     defaultValues: defaultSession,
@@ -150,6 +153,7 @@ function NewSession() {
   const handleCreateSession = async (
     status: 'draft' | 'voting',
   ): Promise<void> => {
+    setIsCreating(true)
     try {
       // Validate form first
       await form.handleSubmit()
@@ -163,11 +167,9 @@ function NewSession() {
       // Invalidate venues query to refresh the list with the newly added venue
       await queryClient.invalidateQueries({ queryKey: ['venues'] })
 
-      // Show success message
+      // Show success message only for drafts
       if (status === 'draft') {
         toast.success('Session saved as draft')
-      } else {
-        toast.success('Session published successfully')
       }
 
       // Navigate to the session page
@@ -184,8 +186,9 @@ function NewSession() {
       toast.error('Failed to create session', {
         description: errorMessage,
       })
+    } finally {
+      setIsCreating(false)
     }
-  }
 
   return (
     <form
@@ -448,7 +451,11 @@ function NewSession() {
                                                 ? [
                                                     ...existingLevel.timeSlots,
                                                     { id, range },
-                                                  ]
+                                                  ].sort(
+                                                    (a: any, b: any) =>
+                                                      a.range[0].getTime() -
+                                                      b.range[0].getTime(),
+                                                  )
                                                 : existingLevel.timeSlots.filter(
                                                     (ts: any) => ts.id !== id,
                                                   )
@@ -556,51 +563,37 @@ function NewSession() {
             </>
           )}
         </form.Field>
-        <form.Subscribe
-          selector={(state) => {
-            return { isSubmitting: state.isSubmitting }
-          }}
-        >
-          {({ isSubmitting }) => (
-            <ButtonGroup className="w-full">
+        <ButtonGroup className="w-full">
+          <Button
+            type="button"
+            onClick={() => handleCreateSession('voting')}
+            disabled={isCreating}
+            className="flex-1 rounded-r-none"
+          >
+            {isCreating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {isCreating ? 'Publishing...' : 'Publish'}
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
               <Button
                 type="button"
-                onClick={() => handleCreateSession('voting')}
-                disabled={isSubmitting}
-                className="flex-1 rounded-r-none"
+                disabled={isCreating}
+                className="rounded-l-none border-l"
+                size="icon"
               >
-                {isSubmitting && (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                )}
-                {isSubmitting ? 'Creating session...' : 'Publish'}
+                <ChevronDown className="h-4 w-4" />
               </Button>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    type="button"
-                    disabled={isSubmitting}
-                    className="rounded-l-none border-l"
-                    size="icon"
-                  >
-                    <ChevronDown className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem
-                    onSelect={() => handleCreateSession('voting')}
-                  >
-                    Publish
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onSelect={() => handleCreateSession('draft')}
-                  >
-                    Save as draft
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </ButtonGroup>
-          )}
-        </form.Subscribe>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => handleCreateSession('voting')}>
+                Publish
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => handleCreateSession('draft')}>
+                Save as draft
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </ButtonGroup>
       </FieldSet>
     </form>
   )

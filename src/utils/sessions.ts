@@ -144,27 +144,35 @@ export const fetchSession = createServerFn({ method: 'GET' })
         : []
 
       // Add players to options based on votes
-      const timeSlots = timeSlotsRaw.map((slot: any) => ({
-        ...slot,
-        options: slot.options.map((option: any) => {
-          // Find all votes for this option
-          const votesForOption = votesData?.filter(
-            (vote) => vote.option_id === option.id,
-          )
+      const timeSlots = timeSlotsRaw
+        .map((slot: any) => ({
+          ...slot,
+          range: [new Date(slot.range[0]), new Date(slot.range[1])],
+          options: slot.options.map((option: any) => {
+            // Find all votes for this option
+            const votesForOption = votesData?.filter(
+              (vote) => vote.option_id === option.id,
+            )
 
-          // Transform votes to players with votedAt timestamp
-          const players =
-            votesForOption?.map((vote) => ({
-              ...(vote.players as any),
-              votedAt: new Date(vote.voted_at),
-            })) || []
+            // Transform votes to players with votedAt timestamp
+            const players =
+              votesForOption?.map((vote) => ({
+                ...(vote.players as any),
+                votedAt: new Date(vote.voted_at),
+              })) || []
 
-          return {
-            ...option,
-            players,
-          }
-        }),
-      }))
+            return {
+              ...option,
+              players,
+            }
+          }),
+        }))
+        .sort((a: any, b: any) => {
+          // Sort time slots by start time
+          const aTime = new Date(a.range[0]).getTime()
+          const bTime = new Date(b.range[0]).getTime()
+          return aTime - bTime
+        })
 
       const session: Session = {
         id: sessionRow.public_id,
@@ -898,6 +906,7 @@ export const createSessionValidator: z.ZodType<SessionForm> = z.object({
   venueLocation: z
     .string()
     .url({ message: 'Please enter a valid URL for the venue' }),
+  venuePlaceId: z.string().min(1, { message: 'Venue Place ID is required' }),
   date: z.date(),
   levels: z
     .array(
@@ -945,7 +954,7 @@ export const createSession = createServerFn({ method: 'POST' })
 
         // Save venue to database for future autocomplete
         const { venueName, venueLocation, venuePlaceId } = data
-        if (venueName && venueLocation) {
+        if (venueName && venueLocation && venuePlaceId) {
           try {
             await upsertVenue({
               data: {
