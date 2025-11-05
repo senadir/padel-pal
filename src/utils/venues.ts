@@ -47,11 +47,6 @@ export const upsertVenue = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     const supabase = getSupabaseServerClient()
 
-    // Validate placeId is provided
-    if (!data.placeId) {
-      throw new Error('place_id is required')
-    }
-
     // Upsert venue (insert or ignore if place_id already exists)
     const { data: venue, error } = await supabase
       .from('venues')
