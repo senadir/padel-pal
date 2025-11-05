@@ -52,7 +52,7 @@ export function NavigationProgress() {
 
   return (
     <div
-      className="fixed top-0 left-0 right-0 z-100 h-0.25 bg-primary transition-all duration-300 ease-out origin-left shadow-[0_0_10px_var(--primary)]"
+      className="fixed top-0 left-0 right-0 z-50 h-px bg-primary transition-all duration-300 ease-out origin-left shadow-[0_0_10px_var(--primary)]"
       style={
         {
           transform: `scaleX(${progress / 100})`,
