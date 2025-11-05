@@ -1,17 +1,18 @@
 import {
-  createFileRoute,
   Link,
+  createFileRoute,
   redirect,
   useSearch,
 } from '@tanstack/react-router'
-import { useAuth, useIsOrganizer } from '@/contexts/auth'
 import { useEffect } from 'react'
 import { toast } from 'sonner'
 import { useSuspenseQuery } from '@tanstack/react-query'
-import { sessionsQueryOptions } from '@/utils/sessions'
 import { format } from 'date-fns'
+import { CalendarPlus, ChevronRight, Plus } from 'lucide-react'
+import { sessionsQueryOptions } from '@/utils/sessions'
 import { Button } from '@/components/ui/button'
-import { ChevronRight, CalendarPlus } from 'lucide-react'
+import { useAuth, useIsOrganizer } from '@/contexts/auth'
+import { Separator } from '@/components/ui/separator'
 import {
   Empty,
   EmptyContent,
@@ -118,7 +119,16 @@ function App() {
                 Below are the open sessions that you can vote for or join.
               </p>
             </div>
+            {isOrganizer && (
+              <Button asChild>
+                <Link to="/sessions/new">
+                  <Plus className="mr-2 h-4 w-4" />
+                  New Session
+                </Link>
+              </Button>
+            )}
           </div>
+          <Separator />
           <div className="flex flex-col gap-4">
             {sessions.map((session) => {
               const now = new Date()

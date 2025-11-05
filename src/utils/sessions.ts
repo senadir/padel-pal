@@ -1046,9 +1046,18 @@ export const saveSessionTemplate = createServerFn({ method: 'POST' })
           venueName: z.string().optional(),
           venueLocation: z.string().optional(),
           venuePlaceId: z.string().optional(),
-          levels: z.array(z.string()),
+          levels: z.array(
+            z.object({
+              level: z.string(),
+              timeSlots: z.array(
+                z.object({
+                  id: z.string(),
+                  range: z.tuple([z.string(), z.string()]), // Store as ISO strings for JSON
+                }),
+              ),
+            }),
+          ),
           timeBlocks: z.enum(['60', '90']),
-          timeSlots: z.array(z.object({ id: z.string() })).optional(),
           limitPlayers: z.boolean(),
           playersPerSlot: z.number().optional(),
         }),

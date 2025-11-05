@@ -1,14 +1,16 @@
 import { formOptions, useForm } from '@tanstack/react-form'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ClientOnly,
   createFileRoute,
   redirect,
   useRouter,
+  useSearch,
 } from '@tanstack/react-router'
 import { addMinutes, format, isAfter, parse } from 'date-fns'
-import { ChevronDown, ChevronsUpDown, Loader2 } from 'lucide-react'
+import { ChevronDown, ChevronsUpDown, Loader2, Save } from 'lucide-react'
 import { toast } from 'sonner'
+import { useEffect, useState } from 'react'
 import type { SessionForm } from '@/utils/types'
 import { AnimatedCounter } from '@/components/ui/animated-counter'
 import { PlaceSearchCombobox } from '@/components/place-search-combobox'
@@ -18,11 +20,27 @@ import { ButtonGroup } from '@/components/ui/button-group'
 import { Checkbox } from '@/components/ui/checkbox'
 import { DateTimePicker } from '@/components/ui/datetime-picker'
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import {
   Field,
   FieldContent,
@@ -43,7 +61,12 @@ import {
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'
 import { Input } from '@/components/ui/input'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import { createSession, createSessionValidator } from '@/utils/sessions'
+import {
+  createSession,
+  createSessionValidator,
+  fetchSessionTemplates,
+  saveSessionTemplate,
+} from '@/utils/sessions'
 
 const defaultSession: SessionForm = {
   venueName: '',
@@ -67,6 +90,11 @@ const defaultSession: SessionForm = {
 }
 
 export const Route = createFileRoute('/sessions/new')({
+  validateSearch: (search: Record<string, unknown>) => {
+    return {
+      templateId: search.templateId as string | undefined,
+    }
+  },
   beforeLoad: async ({ context, location }) => {
     const { authData } = context
 
@@ -133,6 +161,16 @@ const generateTimeSlots = (date: Date, timeBlocks: number) => {
 function NewSession() {
   const router = useRouter()
   const queryClient = useQueryClient()
+  const search = useSearch({ from: '/sessions/new' })
+  const [saveTemplateDialogOpen, setSaveTemplateDialogOpen] = useState(false)
+  const [templateName, setTemplateName] = useState('')
+  const [isSavingTemplate, setIsSavingTemplate] = useState(false)
+
+  // Fetch templates
+  const { data: templates } = useQuery({
+    queryKey: ['session-templates'],
+    queryFn: () => fetchSessionTemplates(),
+  })
 
   const sessionFormOptions = formOptions({
     defaultValues: defaultSession,
@@ -145,6 +183,13 @@ function NewSession() {
     },
   })
   const form = useForm(sessionFormOptions)
+
+  // Load template from URL if templateId is present
+  useEffect(() => {
+    if (search.templateId && templates) {
+      handleLoadTemplate(search.templateId)
+    }
+  }, [search.templateId, templates])
 
   // Handle session creation with specified status
   const handleCreateSession = async (
@@ -187,6 +232,91 @@ function NewSession() {
     }
   }
 
+  // Handle loading a template
+  const handleLoadTemplate = (templateId: string) => {
+    const template = templates?.find((t) => t.id.toString() === templateId)
+    if (!template) return
+
+    const templateData = template.template_data as any
+
+    // Transform ISO strings back to Date objects
+    const levels = templateData.levels.map((level: any) => ({
+      level: level.level,
+      timeSlots: level.timeSlots.map((slot: any) => ({
+        id: slot.id,
+        range: [new Date(slot.range[0]), new Date(slot.range[1])] as [
+          Date,
+          Date,
+        ],
+      })),
+    }))
+
+    // Set form values
+    form.setFieldValue('venueName', templateData.venueName || '')
+    form.setFieldValue('venueLocation', templateData.venueLocation || '')
+    form.setFieldValue('venuePlaceId', templateData.venuePlaceId)
+    form.setFieldValue('levels', levels)
+    form.setFieldValue('timeBlocks', templateData.timeBlocks)
+    form.setFieldValue('limitPlayers', templateData.limitPlayers)
+    form.setFieldValue('playersPerSlot', templateData.playersPerSlot)
+
+    toast.success('Template loaded successfully')
+  }
+
+  // Handle saving as template
+  const handleSaveTemplate = async () => {
+    if (!templateName.trim()) {
+      toast.error('Please enter a template name')
+      return
+    }
+
+    try {
+      setIsSavingTemplate(true)
+      const formValues = form.state.values
+
+      // Transform dates to ISO strings for JSON storage
+      const templateData = {
+        venueName: formValues.venueName,
+        venueLocation: formValues.venueLocation,
+        venuePlaceId: formValues.venuePlaceId,
+        levels: formValues.levels.map((level) => ({
+          level: level.level,
+          timeSlots: level.timeSlots.map((slot) => ({
+            id: slot.id,
+            range: [
+              slot.range[0].toISOString(),
+              slot.range[1].toISOString(),
+            ] as [string, string],
+          })),
+        })),
+        timeBlocks: formValues.timeBlocks,
+        limitPlayers: formValues.limitPlayers,
+        playersPerSlot: formValues.playersPerSlot,
+      }
+
+      await saveSessionTemplate({
+        data: {
+          name: templateName,
+          templateData,
+        },
+      })
+
+      toast.success('Template saved successfully')
+      setSaveTemplateDialogOpen(false)
+      setTemplateName('')
+      await queryClient.invalidateQueries({ queryKey: ['session-templates'] })
+    } catch (error) {
+      console.error('Error saving template:', error)
+      const errorMessage =
+        error instanceof Error ? error.message : 'An unexpected error occurred'
+      toast.error('Failed to save template', {
+        description: errorMessage,
+      })
+    } finally {
+      setIsSavingTemplate(false)
+    }
+  }
+
   return (
     <form
       className="flex flex-col gap-6"
@@ -203,6 +333,7 @@ function NewSession() {
             Fill in the form below to create a new session
           </FieldLegend>
         </div>
+
         <form.Subscribe
           selector={(state) => ({
             venueName: state.values.venueName,
