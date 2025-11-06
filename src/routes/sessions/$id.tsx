@@ -145,7 +145,7 @@ function RouteComponent() {
   const queryClient = useQueryClient()
 
   // Determine which view to show based on session status
-  const showMatchesView = session.status === 'open'
+  const showMatchesView = ['open', 'closed', 'cancelled'].includes(session.status || '')
 
   // Delete session mutation
   const deleteSessionMutation = useMutation({
