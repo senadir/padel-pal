@@ -186,21 +186,8 @@ function RouteComponent() {
     authData.hasPlaytomicProfile
   )
 
-  // Create a no-op user for unauthenticated state
-  const userForVoting = currentUser || {
-    id: '',
-    name: null,
-    phone: null,
-    level: null,
-    avatar: null,
-    playtomic_id: null,
-    status: null,
-    created_at: '',
-  }
-
   const { voteForSession: voteForSessionFn } = useVoteForSession({
     sessionId: id,
-    currentUser: userForVoting,
   })
 
   // CHANGE: Wrap voting function to check authentication before allowing vote
@@ -222,7 +209,7 @@ function RouteComponent() {
       return
     }
     // User is fully authenticated, proceed with voting
-    voteForSessionFn(variables)
+    voteForSessionFn({ ...variables, currentUser })
   }
   const generatedGamesCount = useMemo(() => {
     return session.timeSlots.reduce((acc, timeSlot) => {
@@ -271,7 +258,6 @@ function RouteComponent() {
             key={timeSlot.id}
             timeSlot={timeSlot}
             session={session}
-            currentUser={userForVoting}
             voteForSession={voteForSession}
           />
         ))}
@@ -279,9 +265,9 @@ function RouteComponent() {
           <>
             <FieldSeparator />
             <Field>
-              {session.status === 'draft' && (
+              {session.status === 'draft' ? (
                 <Button
-                  type="button"
+                  type="submit"
                   onClick={() => updateStatusMutation.mutate('voting')}
                   disabled={updateStatusMutation.isPending}
                   className="w-full mb-2"
@@ -291,14 +277,15 @@ function RouteComponent() {
                   )}
                   Mark as Ready for Voting
                 </Button>
+              ) : (
+                <Button type="submit" disabled={!generatedGamesCount}>
+                  <Link to={Route.fullPath + '/matches'}>
+                    {generatedGamesCount === 0
+                      ? 'Close poll'
+                      : `Close poll and create ${generatedGamesCount} options`}
+                  </Link>
+                </Button>
               )}
-              <Button type="submit" disabled={!generatedGamesCount}>
-                <Link to={Route.fullPath + '/matches'}>
-                  {generatedGamesCount === 0
-                    ? 'Close poll'
-                    : `Close poll and create ${generatedGamesCount} options`}
-                </Link>
-              </Button>
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button
@@ -369,18 +356,19 @@ function RouteComponent() {
 const TimeSlot = ({
   timeSlot,
   session,
-  currentUser,
   voteForSession,
 }: {
   timeSlot: Session['timeSlots'][number]
   session: Session
-  currentUser: Player
   voteForSession: (v: {
     timeSlot: string
     level: string
     session: Session
   }) => void
 }) => {
+  const { authData } = useAuth()
+  const currentUser = authData?.player
+
   return (
     <div className="w-full" key={timeSlot.id}>
       <FieldSet>
@@ -393,7 +381,7 @@ const TimeSlot = ({
           const selectedLevel =
             timeSlot.options.find((option: Option) =>
               option.players.some(
-                (player: Player) => player.id === currentUser.id,
+                (player: Player) => player.id === currentUser?.id,
               ),
             )?.level ?? ''
 
@@ -403,7 +391,11 @@ const TimeSlot = ({
               orientation="horizontal"
               value={selectedLevel}
               onValueChange={(value) => {
-                voteForSession({ timeSlot: timeSlot.id, level: value, session })
+                voteForSession({
+                  timeSlot: timeSlot.id,
+                  level: value,
+                  session,
+                })
               }}
             >
               {timeSlot.options.map((option: Option) => (
@@ -559,9 +551,14 @@ const PlayerOptionDialog = ({
   currentGame: Option
 }) => {
   const { data: session } = useQuery(sessionQueryOptions(currentGame.slot.id))
+  const { authData } = useAuth()
+  const currentUser = authData?.player
+
+  if (!currentUser) {
+    return null
+  }
   const { voteForSession } = useVoteForSession({
     sessionId: currentGame.slot.id,
-    currentUser: player,
   })
   if (!session) {
     return null
@@ -631,6 +628,7 @@ const PlayerOptionDialog = ({
                           timeSlot: timeSlot.id,
                           level: option.level,
                           session,
+                          currentUser,
                         })
                       }
                     }}

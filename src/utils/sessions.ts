@@ -769,26 +769,24 @@ export const generateMatches = createServerFn({ method: 'POST' })
     return { success: true, matchesCreated: insertedMatches.length }
   })
 
-export const useVoteForSession = ({
-  sessionId,
-  currentUser,
-}: {
-  sessionId: string
-  currentUser: Player
-}) => {
+export const useVoteForSession = ({ sessionId }: { sessionId: string }) => {
   const queryClient = useQueryClient()
 
   const { mutate: voteForSession } = useMutation({
-    mutationFn: async (variables: {
+    mutationFn: async ({
+      timeSlot,
+      level,
+      session,
+      currentUser: user,
+    }: {
       timeSlot: string
       level: string
       session: Session
+      currentUser: Player
     }): Promise<void> => {
       // Find the option for this time slot + level combination
-      const slot = variables.session.timeSlots.find(
-        (ts) => ts.id === variables.timeSlot,
-      )
-      const option = slot?.options.find((o) => o.level === variables.level)
+      const slot = session.timeSlots.find((ts) => ts.id === timeSlot)
+      const option = slot?.options.find((o) => o.level === level)
 
       if (!option) {
         throw new Error('Option not found')
@@ -796,7 +794,7 @@ export const useVoteForSession = ({
 
       // Check if user already voted for this option (toggle behavior)
       const alreadyVoted = option.players.some(
-        (player) => player.id === currentUser.id,
+        (player) => player.id === user.id,
       )
 
       if (alreadyVoted) {
@@ -805,23 +803,23 @@ export const useVoteForSession = ({
           data: {
             sessionPublicId: sessionId,
             optionId: option.id,
-            playerId: currentUser.id,
+            playerId: user.id,
           },
         })
       } else {
         // Remove votes from other levels in same time slot first
         const otherOptionsInSlot =
-          slot?.options.filter((o) => o.level !== variables.level) || []
+          slot?.options.filter((o) => o.level !== level) || []
         const unvotePromises = otherOptionsInSlot
           .filter((otherOption) =>
-            otherOption.players.some((p) => p.id === currentUser.id),
+            otherOption.players.some((p) => p.id === user.id),
           )
           .map((otherOption) =>
             unvoteForOption({
               data: {
                 sessionPublicId: sessionId,
                 optionId: otherOption.id,
-                playerId: currentUser.id,
+                playerId: user.id,
               },
             }),
           )
@@ -832,13 +830,13 @@ export const useVoteForSession = ({
           data: {
             sessionPublicId: sessionId,
             optionId: option.id,
-            playerId: currentUser.id,
+            playerId: user.id,
           },
         })
       }
     },
     // Optimistic update BEFORE mutation
-    onMutate: async (variables) => {
+    onMutate: async ({ timeSlot, level, session, currentUser: user }) => {
       // Cancel any outgoing refetches to avoid overwriting optimistic update
       await queryClient.cancelQueries({ queryKey: ['sessions', sessionId] })
 
@@ -849,12 +847,10 @@ export const useVoteForSession = ({
       ])
 
       // Check if this is a vote or unvote
-      const slot = variables.session.timeSlots.find(
-        (ts) => ts.id === variables.timeSlot,
-      )
-      const option = slot?.options.find((o) => o.level === variables.level)
+      const slot = session.timeSlots.find((ts) => ts.id === timeSlot)
+      const option = slot?.options.find((o) => o.level === level)
       const isUnvoting =
-        option?.players.some((player) => player.id === currentUser.id) ?? false
+        option?.players.some((player) => player.id === user.id) ?? false
 
       // Optimistically update to the new value
       queryClient.setQueryData<Session>(
@@ -863,7 +859,7 @@ export const useVoteForSession = ({
           if (!old) return old
 
           const optionsInSlot = old.timeSlots.find(
-            (timeSlot) => timeSlot.id === variables.timeSlot,
+            (timeSlotObj) => timeSlotObj.id === timeSlot,
           )?.options
 
           if (!optionsInSlot) {
@@ -873,29 +869,29 @@ export const useVoteForSession = ({
           const updatedGamesInSlot = optionsInSlot.map((option) => {
             // If the currently selected level is the same as the one we are voting for, we should remove the vote.
             if (
-              option.level === variables.level &&
-              option.players.some((player) => player.id === currentUser.id)
+              option.level === level &&
+              option.players.some((player) => player.id === user.id)
             ) {
               return {
                 ...option,
                 players: option.players.filter(
-                  (player) => player.id !== currentUser.id,
+                  (player) => player.id !== user.id,
                 ),
               }
             }
 
             // Remove the current user from all levels in this time slot first
             const playersWithoutCurrentUser = option.players.filter(
-              (player) => player.id !== currentUser.id,
+              (player) => player.id !== user.id,
             )
 
             // Add the user only to the selected level
-            if (option.level === variables.level) {
+            if (option.level === level) {
               return {
                 ...option,
                 players: [
                   {
-                    ...currentUser,
+                    ...user,
                     votedAt: new Date(),
                   },
                   ...playersWithoutCurrentUser,
@@ -908,11 +904,11 @@ export const useVoteForSession = ({
 
           return {
             ...old,
-            timeSlots: old.timeSlots.map((timeSlot) => {
-              if (timeSlot.id === variables.timeSlot) {
-                return { ...timeSlot, options: updatedGamesInSlot }
+            timeSlots: old.timeSlots.map((ts) => {
+              if (ts.id === timeSlot) {
+                return { ...ts, options: updatedGamesInSlot }
               }
-              return timeSlot
+              return ts
             }),
           }
         },
@@ -937,20 +933,18 @@ export const useVoteForSession = ({
         description: errorMessage,
       })
     },
-    onSuccess: (_data, variables, context) => {
+    onSuccess: (_data, { timeSlot, level, session }, context) => {
       // Find the time slot to get the start time
-      const slot = variables.session.timeSlots.find(
-        (ts) => ts.id === variables.timeSlot,
-      )
+      const slot = session.timeSlots.find((ts) => ts.id === timeSlot)
       const timeSlotStart = slot?.range[0] ? format(slot.range[0], 'HH:mm') : ''
-      const level = variables.level.toLowerCase()
+      const levelStr = level.toLowerCase()
 
       if (context?.isUnvoting) {
         toast.success(
-          `You removed your vote from the ${timeSlotStart} ${level} slot`,
+          `You removed your vote from the ${timeSlotStart} ${levelStr} slot`,
         )
       } else {
-        toast.success(`You voted for the ${timeSlotStart} ${level} slot`)
+        toast.success(`You voted for the ${timeSlotStart} ${levelStr} slot`)
       }
     },
     // Always refetch after error or success to sync with server
