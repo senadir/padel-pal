@@ -290,7 +290,7 @@ export const fetchMatches = createServerFn({ method: 'GET' })
 
 export const sessionQueryOptions = (sessionId: string) =>
   queryOptions({
-    queryKey: ['session', sessionId],
+    queryKey: ['sessions', sessionId],
     queryFn: () => fetchSession({ data: sessionId }),
   })
 
@@ -840,11 +840,11 @@ export const useVoteForSession = ({
     // Optimistic update BEFORE mutation
     onMutate: async (variables) => {
       // Cancel any outgoing refetches to avoid overwriting optimistic update
-      await queryClient.cancelQueries({ queryKey: ['session', sessionId] })
+      await queryClient.cancelQueries({ queryKey: ['sessions', sessionId] })
 
       // Snapshot the previous value
       const previousSession = queryClient.getQueryData<Session>([
-        'session',
+        'sessions',
         sessionId,
       ])
 
@@ -858,7 +858,7 @@ export const useVoteForSession = ({
 
       // Optimistically update to the new value
       queryClient.setQueryData<Session>(
-        ['session', sessionId],
+        ['sessions', sessionId],
         (old: Session | undefined): Session | undefined => {
           if (!old) return old
 
@@ -871,52 +871,52 @@ export const useVoteForSession = ({
           }
 
           const updatedGamesInSlot = optionsInSlot.map((option) => {
-          // If the currently selected level is the same as the one we are voting for, we should remove the vote.
-          if (
-            option.level === variables.level &&
-            option.players.some((player) => player.id === currentUser.id)
-          ) {
-            return {
-              ...option,
-              players: option.players.filter(
-                (player) => player.id !== currentUser.id,
-              ),
+            // If the currently selected level is the same as the one we are voting for, we should remove the vote.
+            if (
+              option.level === variables.level &&
+              option.players.some((player) => player.id === currentUser.id)
+            ) {
+              return {
+                ...option,
+                players: option.players.filter(
+                  (player) => player.id !== currentUser.id,
+                ),
+              }
             }
+
+            // Remove the current user from all levels in this time slot first
+            const playersWithoutCurrentUser = option.players.filter(
+              (player) => player.id !== currentUser.id,
+            )
+
+            // Add the user only to the selected level
+            if (option.level === variables.level) {
+              return {
+                ...option,
+                players: [
+                  {
+                    ...currentUser,
+                    votedAt: new Date(),
+                  },
+                  ...playersWithoutCurrentUser,
+                ],
+              }
+            }
+
+            return { ...option, players: playersWithoutCurrentUser }
+          })
+
+          return {
+            ...old,
+            timeSlots: old.timeSlots.map((timeSlot) => {
+              if (timeSlot.id === variables.timeSlot) {
+                return { ...timeSlot, options: updatedGamesInSlot }
+              }
+              return timeSlot
+            }),
           }
-
-          // Remove the current user from all levels in this time slot first
-          const playersWithoutCurrentUser = option.players.filter(
-            (player) => player.id !== currentUser.id,
-          )
-
-          // Add the user only to the selected level
-          if (option.level === variables.level) {
-            return {
-              ...option,
-              players: [
-                {
-                  ...currentUser,
-                  votedAt: new Date(),
-                },
-                ...playersWithoutCurrentUser,
-              ],
-            }
-          }
-
-          return { ...option, players: playersWithoutCurrentUser }
-        })
-
-        return {
-          ...old,
-          timeSlots: old.timeSlots.map((timeSlot) => {
-            if (timeSlot.id === variables.timeSlot) {
-              return { ...timeSlot, options: updatedGamesInSlot }
-            }
-            return timeSlot
-          }),
-        }
-      },
-)
+        },
+      )
 
       // Return context with the snapshot and whether this is unvoting
       return { previousSession, isUnvoting }
@@ -925,7 +925,7 @@ export const useVoteForSession = ({
       // Rollback to previous value on error
       if (context?.previousSession) {
         queryClient.setQueryData(
-          ['session', sessionId],
+          ['sessions', sessionId],
           context.previousSession,
         )
       }
@@ -955,7 +955,7 @@ export const useVoteForSession = ({
     },
     // Always refetch after error or success to sync with server
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['session', sessionId] })
+      queryClient.invalidateQueries({ queryKey: ['sessions', sessionId] })
     },
   })
   return { voteForSession }

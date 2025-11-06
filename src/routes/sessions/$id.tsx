@@ -122,7 +122,7 @@ export const Route = createFileRoute('/sessions/$id')({
 
 export const sessionQueryOptions = (sessionId: string) =>
   queryOptions({
-    queryKey: ['session', sessionId],
+    queryKey: ['sessions', sessionId],
     queryFn: () => fetchSession({ data: sessionId }),
   })
 
@@ -157,13 +157,13 @@ function RouteComponent() {
 
   // Update session status mutation (for marking draft as ready for voting)
   const updateStatusMutation = useMutation({
-    mutationFn: (status: 'draft' | 'voting' | 'open' | 'cancelled' | 'closed') =>
+    mutationFn: (
+      status: 'draft' | 'voting' | 'open' | 'cancelled' | 'closed',
+    ) =>
       updateSessionStatus({
         data: { sessionPublicId: id, status },
       }),
     onSuccess: () => {
-      // Invalidate both session and sessions list queries
-      queryClient.invalidateQueries({ queryKey: ['session', id] })
       queryClient.invalidateQueries({ queryKey: ['sessions'] })
 
       toast.success('Session marked as ready for voting')
@@ -454,7 +454,10 @@ const GameSlot = ({
               >
                 {option.players.slice(0, 4).map((player: Player) => (
                   <Avatar key={player.id} className="size-5">
-                    <AvatarImage src={player.avatar ?? undefined} alt={player.name ?? undefined} />
+                    <AvatarImage
+                      src={player.avatar ?? undefined}
+                      alt={player.name ?? undefined}
+                    />
                     <AvatarFallback delayMs={700}>
                       {player.name?.charAt(0) || '?'}
                     </AvatarFallback>
@@ -517,7 +520,10 @@ const PlayerListItem = ({
   return (
     <div className="flex items-center gap-3">
       <Avatar className="size-8">
-        <AvatarImage src={player.avatar ?? undefined} alt={player.name ?? undefined} />
+        <AvatarImage
+          src={player.avatar ?? undefined}
+          alt={player.name ?? undefined}
+        />
         <AvatarFallback delayMs={700}>
           {player.name?.charAt(0) || '?'}
         </AvatarFallback>
@@ -588,13 +594,10 @@ const PlayerOptionDialog = ({
       ),
     }))
     .filter((slot) => slot.options.length > 0)
-    .reduce<Record<string, string>>(
-      (acc, slot) => {
-        acc[slot.id] = slot.options[0].id
-        return acc
-      },
-      {},
-    )
+    .reduce<Record<string, string>>((acc, slot) => {
+      acc[slot.id] = slot.options[0].id
+      return acc
+    }, {})
 
   return (
     <DropdownMenuContent className="w-56" align="start">
