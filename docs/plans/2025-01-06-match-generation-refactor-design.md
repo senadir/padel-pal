@@ -7,7 +7,7 @@
 
 When moving a session from "voting" to "open" status:
 1. The "Close Poll" button doesn't actually update the session status - it just navigates to `/matches`
-2. The button is disabled when there are no votes, but should still work to close voting
+2. The button is disabled when there are no votes (this is acceptable since there's nothing to generate)
 3. Match generation logic is tightly coupled with database operations, making it hard to test or replace with an external engine in the future
 
 ## Goals
