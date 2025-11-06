@@ -325,7 +325,7 @@ function RouteComponent() {
                     <AlertDialogCancel>Cancel</AlertDialogCancel>
                     <AlertDialogAction
                       onClick={() => deleteSessionMutation.mutate()}
-                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      variant="destructive"
                     >
                       Delete
                     </AlertDialogAction>
