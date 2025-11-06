@@ -147,11 +147,7 @@ function App() {
               return (
                 <Link
                   key={session.id}
-                  to={
-                    session.hasMatches
-                      ? '/sessions/$id/matches'
-                      : '/sessions/$id'
-                  }
+                  to="/sessions/$id"
                   params={{ id: session.id }}
                   className="block"
                 >

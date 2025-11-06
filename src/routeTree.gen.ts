@@ -16,7 +16,6 @@ import { Route as SessionsNewRouteImport } from './routes/sessions/new'
 import { Route as SessionsIdRouteImport } from './routes/sessions/$id'
 import { Route as LoginPlaytomicRouteImport } from './routes/login/playtomic'
 import { Route as LoginOtpRouteImport } from './routes/login/otp'
-import { Route as SessionsIdMatchesRouteImport } from './routes/sessions/$id_.matches'
 
 const LogoutRoute = LogoutRouteImport.update({
   id: '/logout',
@@ -53,11 +52,6 @@ const LoginOtpRoute = LoginOtpRouteImport.update({
   path: '/login/otp',
   getParentRoute: () => rootRouteImport,
 } as any)
-const SessionsIdMatchesRoute = SessionsIdMatchesRouteImport.update({
-  id: '/sessions/$id_/matches',
-  path: '/sessions/$id/matches',
-  getParentRoute: () => rootRouteImport,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -67,7 +61,6 @@ export interface FileRoutesByFullPath {
   '/sessions/$id': typeof SessionsIdRoute
   '/sessions/new': typeof SessionsNewRoute
   '/login': typeof LoginIndexRoute
-  '/sessions/$id/matches': typeof SessionsIdMatchesRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -77,7 +70,6 @@ export interface FileRoutesByTo {
   '/sessions/$id': typeof SessionsIdRoute
   '/sessions/new': typeof SessionsNewRoute
   '/login': typeof LoginIndexRoute
-  '/sessions/$id/matches': typeof SessionsIdMatchesRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -88,7 +80,6 @@ export interface FileRoutesById {
   '/sessions/$id': typeof SessionsIdRoute
   '/sessions/new': typeof SessionsNewRoute
   '/login/': typeof LoginIndexRoute
-  '/sessions/$id_/matches': typeof SessionsIdMatchesRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -100,7 +91,6 @@ export interface FileRouteTypes {
     | '/sessions/$id'
     | '/sessions/new'
     | '/login'
-    | '/sessions/$id/matches'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -110,7 +100,6 @@ export interface FileRouteTypes {
     | '/sessions/$id'
     | '/sessions/new'
     | '/login'
-    | '/sessions/$id/matches'
   id:
     | '__root__'
     | '/'
@@ -120,7 +109,6 @@ export interface FileRouteTypes {
     | '/sessions/$id'
     | '/sessions/new'
     | '/login/'
-    | '/sessions/$id_/matches'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -131,7 +119,6 @@ export interface RootRouteChildren {
   SessionsIdRoute: typeof SessionsIdRoute
   SessionsNewRoute: typeof SessionsNewRoute
   LoginIndexRoute: typeof LoginIndexRoute
-  SessionsIdMatchesRoute: typeof SessionsIdMatchesRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -185,13 +172,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginOtpRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/sessions/$id_/matches': {
-      id: '/sessions/$id_/matches'
-      path: '/sessions/$id/matches'
-      fullPath: '/sessions/$id/matches'
-      preLoaderRoute: typeof SessionsIdMatchesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
   }
 }
 
@@ -203,7 +183,6 @@ const rootRouteChildren: RootRouteChildren = {
   SessionsIdRoute: SessionsIdRoute,
   SessionsNewRoute: SessionsNewRoute,
   LoginIndexRoute: LoginIndexRoute,
-  SessionsIdMatchesRoute: SessionsIdMatchesRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
