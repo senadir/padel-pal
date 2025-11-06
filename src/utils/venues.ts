@@ -24,8 +24,8 @@ export const getRecentVenues = createServerFn({ method: 'GET' }).handler(
     // Transform to PlaceSearchResult format
     return venues.map((venue) => ({
       id: venue.id.toString(),
-      name: venue.label,
-      source: 'database' as const,
+      name: venue.label || '',
+      source: 'database',
       googlePlaceId: venue.place_id || undefined,
       googleMapsUrl: venue.maps_url || undefined,
     }))

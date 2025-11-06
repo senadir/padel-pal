@@ -1,21 +1,22 @@
 import {
   HeadContent,
+  Outlet,
   Scripts,
   createRootRouteWithContext,
-  Outlet,
 } from '@tanstack/react-router'
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
 import TanStackQueryDevtools from '../integrations/tanstack-query/devtools'
 import appCss from '../styles.css?url'
 import type { QueryClient } from '@tanstack/react-query'
+import type { User } from '@supabase/supabase-js'
+import type { Player } from '@/utils/types'
 import { getThemeServerFn } from '@/lib/theme'
 import { ThemeProvider } from '@/components/theme-provider'
 import { Header } from '@/components/header'
 import { Toaster } from '@/components/ui/sonner'
+import { NavigationProgress } from '@/components/navigation-progress'
 import { fetchUser } from '@/utils/auth'
-import type { User } from '@supabase/supabase-js'
-import type { Player } from '@/utils/types'
 
 type AuthData = {
   user: User | null
@@ -90,6 +91,7 @@ function RootComponent() {
 
   return (
     <ThemeProvider theme={theme}>
+      <NavigationProgress />
       <Header />
       <div className="mx-auto max-w-md px-8">
         <div className="mx-auto max-w-3xl my-8">

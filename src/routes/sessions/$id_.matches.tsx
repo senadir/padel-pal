@@ -1,4 +1,4 @@
-import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { format } from 'date-fns'
 import { useEffect, useMemo, useState } from 'react'
 import {
@@ -63,7 +63,7 @@ export const Route = createFileRoute('/sessions/$id_/matches')({
     matchId: z.string().optional(),
   }),
   loaderDeps: ({ search: { mine, matchId } }) => ({ mine, matchId }),
-  loader: async ({ params: { id }, context, deps }) => {
+  loader: async ({ params: { id }, context }) => {
     const session = await context.queryClient.ensureQueryData(
       sessionQueryOptions(id),
     )
@@ -82,7 +82,7 @@ export const Route = createFileRoute('/sessions/$id_/matches')({
 function RouteComponent() {
   const { id } = Route.useParams()
   const { data: session } = useSuspenseQuery(sessionQueryOptions(id))
-  const { mine, matchId } = Route.useSearch()
+  const { matchId } = Route.useSearch()
   const { data: matches } = useSuspenseQuery(matchQueryOptions(id))
   const navigate = useNavigate({ from: Route.fullPath })
   const { authData } = useAuth()
@@ -125,7 +125,7 @@ function RouteComponent() {
 
   // Group matches by timeSlot and level
   const groupedMatches: Record<string, Record<string, Array<Match>>> = {}
-  matches.forEach((match: Match) => {
+  matches.forEach((match) => {
     const timeSlot = match.slot
     const level = match.level
     if (!groupedMatches[timeSlot.id]) {
@@ -134,7 +134,7 @@ function RouteComponent() {
     if (!groupedMatches[timeSlot.id][level]) {
       groupedMatches[timeSlot.id][level] = []
     }
-    groupedMatches[timeSlot.id][level].push(match)
+    groupedMatches[timeSlot.id][level].push(match as Match)
   })
 
   const [joinMatchDrawerOpen, setJoinMatchDrawerOpen] = useState(() =>
@@ -227,7 +227,7 @@ function RouteComponent() {
                   <PlayerListItem
                     key={player.id}
                     player={player}
-                    match={activeMatch}
+                    match={activeMatch as Match}
                   />
                 ))}
                 {activeMatch.players.length < 4 &&
@@ -296,7 +296,7 @@ const MatchSlot = ({
               <div className="*:data-[slot=avatar]:ring-background flex space-x-2 *:data-[slot=avatar]:ring-2">
                 {match.players.map((player: Player) => (
                   <Avatar key={player.id} className="size-6">
-                    <AvatarImage src={player.avatar} alt={player.name} />
+                    <AvatarImage src={player.avatar ?? undefined} alt={player.name ?? undefined} />
                     <AvatarFallback delayMs={700}>
                       {player.name?.charAt(0) || '?'}
                     </AvatarFallback>
@@ -347,7 +347,7 @@ const MatchSlot = ({
                       }`}
                     >
                       <Avatar className="size-8">
-                        <AvatarImage src={player.avatar} alt={player.name} />
+                        <AvatarImage src={player.avatar ?? undefined} alt={player.name ?? undefined} />
                         <AvatarFallback delayMs={700}>
                           {player.name?.charAt(0) || '?'}
                         </AvatarFallback>
@@ -397,7 +397,7 @@ const PlayerListItem = ({
   return (
     <div className="flex items-center gap-3">
       <Avatar className="size-8">
-        <AvatarImage src={player.avatar} alt={player.name} />
+        <AvatarImage src={player.avatar ?? undefined} alt={player.name ?? undefined} />
         <AvatarFallback delayMs={700}>
           {player.name?.charAt(0) || '?'}
         </AvatarFallback>
@@ -457,7 +457,7 @@ const PlayerOptionDialog = ({
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
           <a
-            href={`https://wa.me/${player.phone.replace(/[^0-9]/g, '')}`}
+            href={`https://wa.me/${player.phone?.replace(/[^0-9]/g, '') ?? ''}`}
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-2"
@@ -468,7 +468,7 @@ const PlayerOptionDialog = ({
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
           <a
-            href={`https://app.playtomic.io/profile/user/${player.playtomicId}`}
+            href={`https://app.playtomic.io/profile/user/${player.playtomic_id}`}
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-2"

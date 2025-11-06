@@ -1,5 +1,15 @@
 import { getSupabaseServerClient } from './supabase'
 import { createServerFn } from '@tanstack/react-start'
+import type { User } from '@supabase/supabase-js'
+import type { Player, AppRole } from './types'
+
+export type AuthData = {
+  user: User
+  player: Player | null
+  isPhoneVerified: boolean
+  hasPlaytomicProfile: boolean
+  role: AppRole
+}
 
 export const fetchUser = createServerFn({ method: 'GET' }).handler(async () => {
   const supabase = getSupabaseServerClient()
@@ -19,7 +29,7 @@ export const fetchUser = createServerFn({ method: 'GET' }).handler(async () => {
     : null
 
   // Get or create player data from database
-  let { data: player, error } = await supabase
+  let { data: player } = await supabase
     .from('players')
     .select('*')
     .eq('id', data.user.id)
@@ -205,7 +215,7 @@ export const logout = createServerFn({ method: 'POST' }).handler(async () => {
 })
 
 // Utility function to determine redirect path based on user status
-export function getLoginRedirectPath(authData: any): string | null {
+export function getLoginRedirectPath(authData: AuthData | null): string | null {
   if (!authData) {
     return null // User not logged in, stay on current login step
   }

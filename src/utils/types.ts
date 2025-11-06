@@ -41,6 +41,7 @@ export type SessionForm = {
 
 export interface Session extends Omit<SessionForm, 'timeBlocks'> {
   id: string
+  status?: SessionStatus
   timeSlots: Array<{ id: string; range: [Date, Date]; options: Array<Option> }>
 }
 

@@ -6,7 +6,7 @@ import {
   redirect,
   useRouter,
 } from '@tanstack/react-router'
-import { addMinutes, format, isAfter, parse } from 'date-fns'
+import { addMinutes, format, isAfter } from 'date-fns'
 import { ChevronDown, ChevronsUpDown, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useState } from 'react'
@@ -104,7 +104,7 @@ export const Route = createFileRoute('/sessions/new')({
 
 // Helper function to generate time slots (defined outside component)
 const generateTimeSlots = (date: Date, timeBlocks: number) => {
-  const slots: SessionForm['timeSlots'] = []
+  const slots: SessionForm['levels'][number]['timeSlots'] = []
 
   // Set the maximum end time to 11:00 PM on the same day as the input date
   const maxEndTime = new Date(date)
@@ -141,10 +141,6 @@ function NewSession() {
     defaultValues: defaultSession,
     validators: {
       onSubmit: createSessionValidator,
-    },
-    onSubmit: async ({ value }) => {
-      // This will be triggered by direct form submission (not used anymore)
-      // We'll handle submission via custom functions below
     },
   })
   const form = useForm(sessionFormOptions)
@@ -189,7 +185,7 @@ function NewSession() {
     } finally {
       setIsCreating(false)
     }
-
+  }
   return (
     <form
       className="flex flex-col gap-6"
@@ -299,7 +295,7 @@ function NewSession() {
                       if (currentLevels) {
                         field.form.setFieldValue(
                           'levels',
-                          currentLevels.map((level: any) => ({
+                          currentLevels.map((level) => ({
                             ...level,
                             timeSlots: [],
                           })),
@@ -365,10 +361,11 @@ function NewSession() {
                       Select the set of levels available for the session.
                     </FieldDescription>
                     <div className="flex flex-col gap-3">
-                      {levelOptions.map((option, levelIndex) => {
+                      {levelOptions.map((option) => {
                         const levelData = field.state.value.find(
-                          (l: any) => l.level === option.value,
-                        )
+                          (l: SessionForm['levels'][number]) =>
+                            l.level === option.value,
+                        ) ?? { level: option.value, timeSlots: [] }
 
                         return (
                           <Collapsible
@@ -437,8 +434,7 @@ function NewSession() {
                                               field.state.value
                                             const existingLevelIndex =
                                               currentLevels.findIndex(
-                                                (l: any) =>
-                                                  l.level === option.value,
+                                                (l) => l.level === option.value,
                                               )
 
                                             if (existingLevelIndex >= 0) {
@@ -452,12 +448,12 @@ function NewSession() {
                                                     ...existingLevel.timeSlots,
                                                     { id, range },
                                                   ].sort(
-                                                    (a: any, b: any) =>
+                                                    (a, b) =>
                                                       a.range[0].getTime() -
                                                       b.range[0].getTime(),
                                                   )
                                                 : existingLevel.timeSlots.filter(
-                                                    (ts: any) => ts.id !== id,
+                                                    (ts) => ts.id !== id,
                                                   )
 
                                               const updatedLevels = [

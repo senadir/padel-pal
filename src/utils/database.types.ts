@@ -177,6 +177,33 @@ export type Database = {
         }
         Relationships: []
       }
+      session_templates: {
+        Row: {
+          created_at: string
+          created_by: string
+          id: number
+          name: string
+          template_data: Json
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          id?: number
+          name: string
+          template_data: Json
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          id?: number
+          name?: string
+          template_data?: Json
+          updated_at?: string
+        }
+        Relationships: []
+      }
       session_votes: {
         Row: {
           created_at: string
