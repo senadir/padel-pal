@@ -4,12 +4,10 @@ import {
   redirect,
   useSearch,
 } from '@tanstack/react-router'
-import { useAuth, useIsOrganizer } from '@/contexts/auth'
 import { useEffect } from 'react'
 import { toast } from 'sonner'
-import { useSuspenseQuery } from '@tanstack/react-query'
-import { sessionsQueryOptions } from '@/utils/sessions'
-import { format } from 'date-fns'
+import { format, subDays } from 'date-fns'
+import { z } from 'zod'
 import { Button } from '@/components/ui/button'
 import { ChevronRight, CalendarPlus } from 'lucide-react'
 import {
@@ -20,22 +18,11 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from '@/components/ui/empty'
+import { sessionsQueryOptions } from '@/utils/sessions'
+import { useIsOrganizer } from '@/contexts/auth'
 
 export const Route = createFileRoute('/')({
-  component: App,
-  loader: async ({ context }) => {
-    const data = await context.queryClient.ensureQueryData(
-      sessionsQueryOptions(),
-    )
-    return { sessions: data }
-  },
-  validateSearch: (search: Record<string, unknown>) => {
-    return {
-      error: search.error as string | undefined,
-      message: search.message as string | undefined,
-    }
-  },
-  beforeLoad: async ({ context, location }) => {
+  beforeLoad: ({ context, location }) => {
     const { authData } = context
 
     // Redirect to login if not authenticated
@@ -68,12 +55,48 @@ export const Route = createFileRoute('/')({
       })
     }
   },
+  validateSearch: z.object({
+    error: z.string().optional(),
+    message: z.string().optional(),
+  }),
+  loader: async ({ context }) => {
+    const allSessions = await context.queryClient.ensureQueryData(
+      sessionsQueryOptions(),
+    )
+    const { authData } = context
+
+    // Filter sessions based on user role
+    const isOrganizer = authData?.role === 'organizer'
+    let sessions = allSessions
+
+    if (!isOrganizer) {
+      // Players see only voting, open, or recently ended (closed within last 2 days) sessions
+      const twoDaysAgo = subDays(new Date(), 2)
+      sessions = allSessions.filter((session) => {
+        if (session.status === 'draft') {
+          return false
+        }
+        if (session.status === 'voting' || session.status === 'open') {
+          return true
+        }
+        if (session.status === 'closed') {
+          // Show closed sessions that ended within the last 2 days
+          const sessionDate = session.date
+          return sessionDate && sessionDate >= twoDaysAgo
+        }
+        // Exclude cancelled sessions
+        return false
+      })
+    }
+
+    return { sessions }
+  },
+  component: App,
 })
 
 function App() {
-  const { authData } = useAuth()
-  const search = useSearch({ from: '/' })
-  const { data: sessions } = useSuspenseQuery(sessionsQueryOptions())
+  const search = useSearch({ from: Route.id })
+  const { sessions } = Route.useLoaderData()
   const isOrganizer = useIsOrganizer()
 
   // Show error toast if redirected with error
@@ -121,8 +144,6 @@ function App() {
           </div>
           <div className="flex flex-col gap-4">
             {sessions.map((session) => {
-              const now = new Date()
-
               return (
                 <Link
                   key={session.id}

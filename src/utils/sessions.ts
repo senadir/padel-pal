@@ -9,18 +9,24 @@ import { zodValidator } from '@tanstack/zod-adapter'
 import { z } from 'zod'
 import { toast } from 'sonner'
 import ShortUniqueId from 'short-unique-id'
-import {
-  format,
-  formatISO,
-  getHours,
-  getMinutes,
-  setHours,
-  setMinutes,
-} from 'date-fns'
-import { getMockSession } from './mock'
+import { format, formatISO } from 'date-fns'
 import { getSupabaseServerClient } from './supabase'
 import { upsertVenue } from './venues'
 import type { Match, Player, Session, SessionForm } from './types'
+
+// Database time slot types (stored as JSON)
+interface RawTimeSlotOption {
+  id: string
+  slot: { id: string; range: [string, string] }
+  level: string
+  players: unknown[]
+}
+
+interface RawTimeSlot {
+  id: string
+  range: [string, string]
+  options: RawTimeSlotOption[]
+}
 
 export const fetchSessions = createServerFn({ method: 'GET' }).handler(
   async () => {
@@ -137,7 +143,7 @@ export const fetchSession = createServerFn({ method: 'GET' })
         : new Date()
 
       // Parse time slots from JSON
-      const timeSlotsRaw = sessionRow.time_slots
+      const timeSlotsRaw: RawTimeSlot[] = sessionRow.time_slots
         ? typeof sessionRow.time_slots === 'string'
           ? JSON.parse(sessionRow.time_slots)
           : sessionRow.time_slots
@@ -145,10 +151,13 @@ export const fetchSession = createServerFn({ method: 'GET' })
 
       // Add players to options based on votes
       const timeSlots = timeSlotsRaw
-        .map((slot: any) => ({
-          ...slot,
-          range: [new Date(slot.range[0]), new Date(slot.range[1])],
-          options: slot.options.map((option: any) => {
+        .map((slot) => ({
+          id: slot.id,
+          range: [new Date(slot.range[0]), new Date(slot.range[1])] as [
+            Date,
+            Date,
+          ],
+          options: slot.options.map((option) => {
             // Find all votes for this option
             const votesForOption = votesData?.filter(
               (vote) => vote.option_id === option.id,
@@ -157,17 +166,25 @@ export const fetchSession = createServerFn({ method: 'GET' })
             // Transform votes to players with votedAt timestamp
             const players =
               votesForOption?.map((vote) => ({
-                ...(vote.players as any),
+                ...(vote.players as Player),
                 votedAt: new Date(vote.voted_at),
               })) || []
 
             return {
-              ...option,
+              id: option.id,
+              slot: {
+                id: slot.id,
+                range: [new Date(slot.range[0]), new Date(slot.range[1])] as [
+                  Date,
+                  Date,
+                ],
+              },
+              level: option.level,
               players,
             }
           }),
         }))
-        .sort((a: any, b: any) => {
+        .sort((a, b) => {
           // Sort time slots by start time
           const aTime = new Date(a.range[0]).getTime()
           const bTime = new Date(b.range[0]).getTime()
@@ -179,11 +196,14 @@ export const fetchSession = createServerFn({ method: 'GET' })
         venueName: sessionRow.venue_name || '',
         venueLocation: sessionRow.venue_location || '',
         date: sessionDate,
-        time: sessionDate, // Use the same date for time since date contains the full datetime
-        levels: sessionRow.levels || [],
+        levels: (sessionRow.levels || []).map((level) => ({
+          level,
+          timeSlots: [],
+        })),
         timeSlots,
         limitPlayers: sessionRow.limit_players || false,
         playersPerSlot: sessionRow.players_per_slot || undefined,
+        status: sessionRow.status,
       }
 
       return session
@@ -463,6 +483,146 @@ export const unjoinMatch = createServerFn({ method: 'POST' })
     return { success: true }
   })
 
+// Helper function to generate matches from voting results
+async function generateMatchesHelper(sessionPublicId: string) {
+  const supabase = getSupabaseServerClient()
+  const uid = new ShortUniqueId({ length: 8 })
+
+  // Get session
+  const { data: sessionRow, error: sessionError } = await supabase
+    .from('sessions')
+    .select('*')
+    .eq('public_id', sessionPublicId)
+    .single()
+
+  if (sessionError || !sessionRow) {
+    throw new Error('Session not found')
+  }
+
+  // Get all votes for this session
+  const { data: votes, error: votesError } = await supabase
+    .from('session_votes')
+    .select('*, players(*)')
+    .eq('session_id', sessionRow.id)
+
+  if (votesError) {
+    throw new Error(`Failed to fetch votes: ${votesError.message}`)
+  }
+
+  // Parse time slots
+  const timeSlots =
+    typeof sessionRow.time_slots === 'string'
+      ? JSON.parse(sessionRow.time_slots)
+      : sessionRow.time_slots
+
+  const matchesToCreate: Array<any> = []
+  const participantsToCreate: Array<any> = []
+
+  // Group votes by time slot and level
+  for (const timeSlot of timeSlots) {
+    for (const option of timeSlot.options) {
+      const votersForOption = votes?.filter(
+        (vote) => vote.option_id === option.id,
+      )
+
+      if (!votersForOption || votersForOption.length === 0) {
+        // No votes for this option, create empty match slots
+        const matchId = uid.rnd()
+        matchesToCreate.push({
+          session_id: sessionRow.id,
+          public_id: matchId,
+          time_slot_id: timeSlot.id,
+          level: option.level,
+          start_time: timeSlot.range[0],
+          end_time: timeSlot.range[1],
+          max_players: 4, // Matches always have 4 players
+        })
+      } else {
+        // Create matches based on votes (always 4 players per match)
+        const playersPerMatch = 4
+
+        const matchesNeeded = Math.ceil(
+          votersForOption.length / playersPerMatch,
+        )
+
+        for (let i = 0; i < matchesNeeded; i++) {
+          const matchId = uid.rnd()
+          matchesToCreate.push({
+            session_id: sessionRow.id,
+            public_id: matchId,
+            time_slot_id: timeSlot.id,
+            level: option.level,
+            start_time: timeSlot.range[0],
+            end_time: timeSlot.range[1],
+            max_players: playersPerMatch,
+          })
+
+          // Assign players to this match
+          const playersForThisMatch = votersForOption.slice(
+            i * playersPerMatch,
+            (i + 1) * playersPerMatch,
+          )
+
+          for (const vote of playersForThisMatch) {
+            participantsToCreate.push({
+              match_public_id: matchId,
+              player_id: vote.player_id,
+              source: 'vote',
+            })
+          }
+        }
+
+        // If last match isn't full, it has open slots for manual joining
+      }
+    }
+  }
+
+  // Insert matches
+  const { data: insertedMatches, error: matchesError } = await supabase
+    .from('matches')
+    .insert(matchesToCreate)
+    .select()
+
+  if (matchesError) {
+    console.error('Error creating matches:', matchesError)
+    throw new Error(`Failed to create matches: ${matchesError.message}`)
+  }
+
+  // Create a map of public_id to id for participants
+  const matchIdMap = new Map(
+    insertedMatches.map((match) => [match.public_id, match.id]),
+  )
+
+  // Update participants with actual match IDs
+  const participantsWithIds = participantsToCreate
+    .map((p) => ({
+      match_id: matchIdMap.get(p.match_public_id),
+      player_id: p.player_id,
+      source: p.source,
+    }))
+    .filter((p) => p.match_id !== undefined) as Array<{
+    match_id: number
+    player_id: string
+    source: string
+  }>
+
+  // Insert participants
+  if (participantsWithIds.length > 0) {
+    const { error: participantsError } = await supabase
+      .from('match_participants')
+      .insert(participantsWithIds)
+
+    if (participantsError) {
+      console.error('Error creating participants:', participantsError)
+      throw new Error(
+        `Failed to add players to matches: ${participantsError.message}`,
+      )
+    }
+  }
+
+  return { success: true, matchesCreated: insertedMatches.length }
+}
+
 // Generate matches from voting results (hybrid approach)
 export const generateMatches = createServerFn({ method: 'POST' })
   .inputValidator(zodValidator(z.object({ sessionPublicId: z.string() })))
@@ -580,11 +740,17 @@ export const generateMatches = createServerFn({ method: 'POST' })
     )
 
     // Update participants with actual match IDs
-    const participantsWithIds = participantsToCreate.map((p) => ({
-      match_id: matchIdMap.get(p.match_public_id),
-      player_id: p.player_id,
-      source: p.source,
-    }))
+    const participantsWithIds = participantsToCreate
+      .map((p) => ({
+        match_id: matchIdMap.get(p.match_public_id),
+        player_id: p.player_id,
+        source: p.source,
+      }))
+      .filter((p) => p.match_id !== undefined) as Array<{
+      match_id: number
+      player_id: string
+      source: string
+    }>
 
     // Insert participants
     if (participantsWithIds.length > 0) {
@@ -691,18 +857,20 @@ export const useVoteForSession = ({
         option?.players.some((player) => player.id === currentUser.id) ?? false
 
       // Optimistically update to the new value
-      queryClient.setQueryData<Session>(['session', sessionId], (old) => {
-        if (!old) return old
+      queryClient.setQueryData<Session>(
+        ['session', sessionId],
+        (old: Session | undefined): Session | undefined => {
+          if (!old) return old
 
-        const optionsInSlot = old.timeSlots.find(
-          (timeSlot) => timeSlot.id === variables.timeSlot,
-        )?.options
+          const optionsInSlot = old.timeSlots.find(
+            (timeSlot) => timeSlot.id === variables.timeSlot,
+          )?.options
 
-        if (!optionsInSlot) {
-          return old
-        }
+          if (!optionsInSlot) {
+            return old
+          }
 
-        const updatedGamesInSlot = optionsInSlot.map((option) => {
+          const updatedGamesInSlot = optionsInSlot.map((option) => {
           // If the currently selected level is the same as the one we are voting for, we should remove the vote.
           if (
             option.level === variables.level &&
@@ -728,7 +896,6 @@ export const useVoteForSession = ({
               players: [
                 {
                   ...currentUser,
-                  level: variables.level,
                   votedAt: new Date(),
                 },
                 ...playersWithoutCurrentUser,
@@ -748,7 +915,8 @@ export const useVoteForSession = ({
             return timeSlot
           }),
         }
-      })
+      },
+)
 
       // Return context with the snapshot and whether this is unvoting
       return { previousSession, isUnvoting }
@@ -901,7 +1069,7 @@ export const useMatchActions = ({
   }
 }
 
-export const createSessionValidator: z.ZodType<SessionForm> = z.object({
+export const createSessionValidator = z.object({
   venueName: z.string().min(1, { message: 'Venue name is required' }),
   venueLocation: z
     .string()
@@ -1121,6 +1289,77 @@ export const fetchSessionTemplates = createServerFn({ method: 'GET' }).handler(
     }
   },
 )
+
+// Update session status
+export const updateSessionStatus = createServerFn({ method: 'POST' })
+  .inputValidator(
+    zodValidator(
+      z.object({
+        sessionPublicId: z.string(),
+        status: z.enum(['draft', 'voting', 'open', 'cancelled', 'closed']),
+      }),
+    ),
+  )
+  .handler(async ({ data }) => {
+    try {
+      const supabase = getSupabaseServerClient()
+
+      // Get session with current status
+      const { data: sessionRow, error: sessionError } = await supabase
+        .from('sessions')
+        .select('id, status')
+        .eq('public_id', data.sessionPublicId)
+        .single()
+
+      if (sessionError || !sessionRow) {
+        throw new Error('Session not found')
+      }
+
+      const previousStatus = sessionRow.status
+
+      // Update session status
+      const { error: updateError } = await supabase
+        .from('sessions')
+        .update({ status: data.status })
+        .eq('id', sessionRow.id)
+
+      if (updateError) {
+        throw new Error(
+          `Failed to update session status: ${updateError.message}`,
+        )
+      }
+
+      // If status changed from 'voting' to 'open', generate matches
+      if (previousStatus === 'voting' && data.status === 'open') {
+        // Check if matches already exist
+        const { count: matchesCount, error: matchesCheckError } = await supabase
+          .from('matches')
+          .select('*', { count: 'exact', head: true })
+          .eq('session_id', sessionRow.id)
+
+        if (matchesCheckError) {
+          console.error('Error checking existing matches:', matchesCheckError)
+          // Continue anyway - matches generation might still work
+        }
+
+        // Only generate matches if they don't already exist
+        if (!matchesCount || matchesCount === 0) {
+          try {
+            await generateMatchesHelper(data.sessionPublicId)
+          } catch (generateError) {
+            console.error('Error generating matches:', generateError)
+            // Don't fail the status update if match generation fails
+            // Log the error but return success for status update
+          }
+        }
+      }
+
+      return { success: true }
+    } catch (error) {
+      console.error('Error in updateSessionStatus:', error)
+      throw error
+    }
+  })
 
 // Delete session
 export const deleteSession = createServerFn({ method: 'POST' })

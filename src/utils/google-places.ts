@@ -1,5 +1,45 @@
 import type { GooglePlacePrediction, GooglePlaceDetails } from './types'
 
+// Google Places API request types
+interface GooglePlacesAutocompleteRequest {
+  input: string
+  includedPrimaryTypes: string[]
+  locationBias?: {
+    circle: {
+      center: {
+        latitude: number
+        longitude: number
+      }
+      radius: number
+    }
+  }
+}
+
+// Google Places API response types
+interface GooglePlacesAutocompleteResponse {
+  suggestions?: Array<{
+    placePrediction?: {
+      placeId: string
+      text?: { text?: string }
+      structuredFormat?: {
+        mainText?: { text?: string }
+        secondaryText?: { text?: string }
+      }
+    }
+  }>
+}
+
+interface GooglePlaceDetailsResponse {
+  id: string
+  displayName?: { text?: string }
+  formattedAddress?: string
+  googleMapsUri?: string
+  location?: {
+    latitude?: number
+    longitude?: number
+  }
+}
+
 /**
  * Get the Google Places API key from environment variables
  * Throws an error if the key is not configured
@@ -29,7 +69,7 @@ export async function searchGooglePlaces(
     const apiKey = getApiKey()
     const url = 'https://places.googleapis.com/v1/places:autocomplete'
 
-    const requestBody: any = {
+    const requestBody: GooglePlacesAutocompleteRequest = {
       input: query,
       includedPrimaryTypes: ['gym', 'sports_complex', 'sports_club'],
     }
@@ -62,13 +102,15 @@ export async function searchGooglePlaces(
       throw new Error(`Google Places API error: ${response.status}`)
     }
 
-    const data = await response.json()
+    const data =
+      (await response.json()) as GooglePlacesAutocompleteResponse
 
     // Transform to our format
     const results: GooglePlacePrediction[] = (data.suggestions || [])
-      .filter((suggestion: any) => suggestion?.placePrediction)
-      .map((suggestion: any) => {
-        const placePrediction = suggestion.placePrediction
+      .filter((suggestion) => !!suggestion?.placePrediction)
+      .map((suggestion) => {
+        // TypeScript now knows placePrediction exists due to filter
+        const placePrediction = suggestion.placePrediction!
         const mainText =
           placePrediction.structuredFormat?.mainText?.text ||
           placePrediction.text?.text ||
@@ -123,7 +165,7 @@ export async function getGooglePlaceDetails(
       throw new Error(`Failed to fetch place details: ${errorText}`)
     }
 
-    const data = await response.json()
+    const data = (await response.json()) as GooglePlaceDetailsResponse
 
     // Build Google Maps URL from coordinates if not provided
     const lat = data.location?.latitude || 0

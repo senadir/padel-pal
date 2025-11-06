@@ -1,4 +1,9 @@
-import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
+import {
+  Link,
+  createFileRoute,
+  redirect,
+  useNavigate,
+} from '@tanstack/react-router'
 import { format } from 'date-fns'
 import { useEffect, useMemo, useState } from 'react'
 import { EllipsisVertical, ExternalLink, Loader2 } from 'lucide-react'
@@ -45,6 +50,7 @@ import {
 import {
   deleteSession,
   fetchSession,
+  updateSessionStatus,
   useVoteForSession,
 } from '@/utils/sessions'
 import { useAuth, useIsOrganizer } from '@/contexts/auth'
@@ -78,6 +84,28 @@ export const Route = createFileRoute('/sessions/$id')({
       },
     ],
   }),
+  beforeLoad: async ({ params: { id }, context }) => {
+    const { authData } = context
+
+    // Fetch session to check status
+    const session = await context.queryClient.ensureQueryData(
+      sessionQueryOptions(id),
+    )
+
+    // Check if session is draft and user is not organizer
+    if (session.status === 'draft') {
+      const isOrganizer = authData?.role === 'organizer'
+      if (!isOrganizer) {
+        throw redirect({
+          to: '/',
+          search: {
+            error: 'unauthorized',
+            message: 'Draft sessions are only accessible to organizers',
+          },
+        })
+      }
+    }
+  },
   loader: async ({ params: { id }, context }) => {
     const data = await context.queryClient.ensureQueryData(
       sessionQueryOptions(id),
@@ -122,6 +150,29 @@ function RouteComponent() {
       const errorMessage =
         error instanceof Error ? error.message : 'An unexpected error occurred'
       toast.error('Failed to delete session', {
+        description: errorMessage,
+      })
+    },
+  })
+
+  // Update session status mutation (for marking draft as ready for voting)
+  const updateStatusMutation = useMutation({
+    mutationFn: (status: 'draft' | 'voting' | 'open' | 'cancelled' | 'closed') =>
+      updateSessionStatus({
+        data: { sessionPublicId: id, status },
+      }),
+    onSuccess: () => {
+      // Invalidate both session and sessions list queries
+      queryClient.invalidateQueries({ queryKey: ['session', id] })
+      queryClient.invalidateQueries({ queryKey: ['sessions'] })
+
+      toast.success('Session marked as ready for voting')
+    },
+    onError: (error) => {
+      console.error('Error updating session status:', error)
+      const errorMessage =
+        error instanceof Error ? error.message : 'An unexpected error occurred'
+      toast.error('Failed to update session status', {
         description: errorMessage,
       })
     },
@@ -228,6 +279,19 @@ function RouteComponent() {
           <>
             <FieldSeparator />
             <Field>
+              {session.status === 'draft' && (
+                <Button
+                  type="button"
+                  onClick={() => updateStatusMutation.mutate('voting')}
+                  disabled={updateStatusMutation.isPending}
+                  className="w-full mb-2"
+                >
+                  {updateStatusMutation.isPending && (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  )}
+                  Mark as Ready for Voting
+                </Button>
+              )}
               <Button type="submit" disabled={!generatedGamesCount}>
                 <Link to={Route.fullPath + '/matches'}>
                   {generatedGamesCount === 0
@@ -260,8 +324,8 @@ function RouteComponent() {
                   <AlertDialogFooter>
                     <AlertDialogCancel>Cancel</AlertDialogCancel>
                     <AlertDialogAction
-                      variant="destructive"
                       onClick={() => deleteSessionMutation.mutate()}
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                     >
                       Delete
                     </AlertDialogAction>
@@ -390,7 +454,7 @@ const GameSlot = ({
               >
                 {option.players.slice(0, 4).map((player: Player) => (
                   <Avatar key={player.id} className="size-5">
-                    <AvatarImage src={player.avatar} alt={player.name} />
+                    <AvatarImage src={player.avatar ?? undefined} alt={player.name ?? undefined} />
                     <AvatarFallback delayMs={700}>
                       {player.name?.charAt(0) || '?'}
                     </AvatarFallback>
@@ -453,7 +517,7 @@ const PlayerListItem = ({
   return (
     <div className="flex items-center gap-3">
       <Avatar className="size-8">
-        <AvatarImage src={player.avatar} alt={player.name} />
+        <AvatarImage src={player.avatar ?? undefined} alt={player.name ?? undefined} />
         <AvatarFallback delayMs={700}>
           {player.name?.charAt(0) || '?'}
         </AvatarFallback>
@@ -524,12 +588,12 @@ const PlayerOptionDialog = ({
       ),
     }))
     .filter((slot) => slot.options.length > 0)
-    .reduce(
+    .reduce<Record<string, string>>(
       (acc, slot) => {
         acc[slot.id] = slot.options[0].id
         return acc
       },
-      {} as Record<string, string>,
+      {},
     )
 
   return (
@@ -591,7 +655,7 @@ const PlayerOptionDialog = ({
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
           <a
-            href={`https://wa.me/${player.phone.replace(/[^0-9]/g, '')}`}
+            href={`https://wa.me/${player.phone?.replace(/[^0-9]/g, '') ?? ''}`}
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-2"
@@ -602,7 +666,7 @@ const PlayerOptionDialog = ({
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
           <a
-            href={`https://app.playtomic.io/profile/user/${player.playtomicId}`}
+            href={`https://app.playtomic.io/profile/user/${player.playtomic_id}`}
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-2"

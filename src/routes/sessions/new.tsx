@@ -295,7 +295,7 @@ function NewSession() {
                       if (currentLevels) {
                         field.form.setFieldValue(
                           'levels',
-                          currentLevels.map((level: any) => ({
+                          currentLevels.map((level) => ({
                             ...level,
                             timeSlots: [],
                           })),
@@ -434,8 +434,7 @@ function NewSession() {
                                               field.state.value
                                             const existingLevelIndex =
                                               currentLevels.findIndex(
-                                                (l: any) =>
-                                                  l.level === option.value,
+                                                (l) => l.level === option.value,
                                               )
 
                                             if (existingLevelIndex >= 0) {
@@ -449,12 +448,12 @@ function NewSession() {
                                                     ...existingLevel.timeSlots,
                                                     { id, range },
                                                   ].sort(
-                                                    (a: any, b: any) =>
+                                                    (a, b) =>
                                                       a.range[0].getTime() -
                                                       b.range[0].getTime(),
                                                   )
                                                 : existingLevel.timeSlots.filter(
-                                                    (ts: any) => ts.id !== id,
+                                                    (ts) => ts.id !== id,
                                                   )
 
                                               const updatedLevels = [
