@@ -14,6 +14,85 @@ import { getSupabaseServerClient } from './supabase'
 import { upsertVenue } from './venues'
 import type { Match, Player, Session, SessionForm } from './types'
 
+// Types for match generation function
+interface VoteInput {
+  optionId: string
+  playerId: string
+}
+
+interface TimeSlotOption {
+  id: string // option ID
+  timeSlotId: string
+  level: string
+  startTime: Date
+  endTime: Date
+}
+
+interface GeneratedMatch {
+  optionId: string
+  timeSlotId: string
+  level: string
+  startTime: Date
+  endTime: Date
+  maxPlayers: number
+  playerIds: string[]
+}
+
+/**
+ * Pure function to generate matches from voting results.
+ * This is the external matching engine that can be replaced in the future.
+ *
+ * @param options - All available time slot options (time + level combinations)
+ * @param votes - All votes cast by players
+ * @returns Array of matches to create, each with assigned players
+ *
+ * Logic:
+ * - For each option, find all votes
+ * - If zero votes → skip option (no empty matches)
+ * - If 1+ votes → split into matches of 4 players each
+ *   - Full matches: groups of exactly 4
+ *   - Remainder: leftover players (1-3) get their own match with open slots
+ */
+export function generateMatchesFromVotes(
+  options: TimeSlotOption[],
+  votes: VoteInput[],
+): GeneratedMatch[] {
+  const matches: GeneratedMatch[] = []
+
+  for (const option of options) {
+    // Find all votes for this option
+    const votesForOption = votes.filter((vote) => vote.optionId === option.id)
+
+    // Skip options with no votes
+    if (votesForOption.length === 0) {
+      continue
+    }
+
+    // Split voters into matches of 4 players each
+    const playersPerMatch = 4
+    const matchesNeeded = Math.ceil(votesForOption.length / playersPerMatch)
+
+    for (let i = 0; i < matchesNeeded; i++) {
+      const playersForThisMatch = votesForOption.slice(
+        i * playersPerMatch,
+        (i + 1) * playersPerMatch,
+      )
+
+      matches.push({
+        optionId: option.id,
+        timeSlotId: option.timeSlotId,
+        level: option.level,
+        startTime: option.startTime,
+        endTime: option.endTime,
+        maxPlayers: playersPerMatch,
+        playerIds: playersForThisMatch.map((vote) => vote.playerId),
+      })
+    }
+  }
+
+  return matches
+}
+
 // Database time slot types (stored as JSON)
 interface RawTimeSlotOption {
   id: string
@@ -502,82 +581,69 @@ async function generateMatchesHelper(sessionPublicId: string) {
   // Get all votes for this session
   const { data: votes, error: votesError } = await supabase
     .from('session_votes')
-    .select('*, players(*)')
+    .select('option_id, player_id')
     .eq('session_id', sessionRow.id)
 
   if (votesError) {
     throw new Error(`Failed to fetch votes: ${votesError.message}`)
   }
 
-  // Parse time slots
+  // Parse time slots from JSON
   const timeSlots =
     typeof sessionRow.time_slots === 'string'
       ? JSON.parse(sessionRow.time_slots)
       : sessionRow.time_slots
 
-  const matchesToCreate: Array<any> = []
-  const participantsToCreate: Array<any> = []
-
-  // Group votes by time slot and level
+  // Transform database format to function input
+  const options: TimeSlotOption[] = []
   for (const timeSlot of timeSlots) {
     for (const option of timeSlot.options) {
-      const votersForOption = votes?.filter(
-        (vote) => vote.option_id === option.id,
-      )
-
-      if (!votersForOption || votersForOption.length === 0) {
-        // No votes for this option, create empty match slots
-        const matchId = uid.rnd()
-        matchesToCreate.push({
-          session_id: sessionRow.id,
-          public_id: matchId,
-          time_slot_id: timeSlot.id,
-          level: option.level,
-          start_time: timeSlot.range[0],
-          end_time: timeSlot.range[1],
-          max_players: 4, // Matches always have 4 players
-        })
-      } else {
-        // Create matches based on votes (always 4 players per match)
-        const playersPerMatch = 4
-
-        const matchesNeeded = Math.ceil(
-          votersForOption.length / playersPerMatch,
-        )
-
-        for (let i = 0; i < matchesNeeded; i++) {
-          const matchId = uid.rnd()
-          matchesToCreate.push({
-            session_id: sessionRow.id,
-            public_id: matchId,
-            time_slot_id: timeSlot.id,
-            level: option.level,
-            start_time: timeSlot.range[0],
-            end_time: timeSlot.range[1],
-            max_players: playersPerMatch,
-          })
-
-          // Assign players to this match
-          const playersForThisMatch = votersForOption.slice(
-            i * playersPerMatch,
-            (i + 1) * playersPerMatch,
-          )
-
-          for (const vote of playersForThisMatch) {
-            participantsToCreate.push({
-              match_public_id: matchId,
-              player_id: vote.player_id,
-              source: 'vote',
-            })
-          }
-        }
-
-        // If last match isn't full, it has open slots for manual joining
-      }
+      options.push({
+        id: option.id,
+        timeSlotId: timeSlot.id,
+        level: option.level,
+        startTime: new Date(timeSlot.range[0]),
+        endTime: new Date(timeSlot.range[1]),
+      })
     }
   }
 
-  // Insert matches
+  const voteInputs: VoteInput[] =
+    votes?.map((vote) => ({
+      optionId: vote.option_id,
+      playerId: vote.player_id,
+    })) || []
+
+  // Call the pure match generation function
+  const generatedMatches = generateMatchesFromVotes(options, voteInputs)
+
+  // Transform domain model back to database format
+  const matchesToCreate: Array<any> = []
+  const participantsToCreate: Array<any> = []
+
+  for (const match of generatedMatches) {
+    const matchId = uid.rnd()
+    matchesToCreate.push({
+      session_id: sessionRow.id,
+      public_id: matchId,
+      time_slot_id: match.timeSlotId,
+      level: match.level,
+      start_time: match.startTime.toISOString(),
+      end_time: match.endTime.toISOString(),
+      max_players: match.maxPlayers,
+    })
+
+    // Add participants for this match
+    for (const playerId of match.playerIds) {
+      participantsToCreate.push({
+        match_public_id: matchId,
+        player_id: playerId,
+        source: 'vote',
+      })
+    }
+  }
+
+  // Insert matches into database
   const { data: insertedMatches, error: matchesError } = await supabase
     .from('matches')
     .insert(matchesToCreate)
@@ -627,146 +693,8 @@ async function generateMatchesHelper(sessionPublicId: string) {
 export const generateMatches = createServerFn({ method: 'POST' })
   .inputValidator(zodValidator(z.object({ sessionPublicId: z.string() })))
   .handler(async ({ data }) => {
-    const supabase = getSupabaseServerClient()
-    const uid = new ShortUniqueId({ length: 8 })
-
-    // Get session
-    const { data: sessionRow, error: sessionError } = await supabase
-      .from('sessions')
-      .select('*')
-      .eq('public_id', data.sessionPublicId)
-      .single()
-
-    if (sessionError || !sessionRow) {
-      throw new Error('Session not found')
-    }
-
-    // Get all votes for this session
-    const { data: votes, error: votesError } = await supabase
-      .from('session_votes')
-      .select('*, players(*)')
-      .eq('session_id', sessionRow.id)
-
-    if (votesError) {
-      throw new Error(`Failed to fetch votes: ${votesError.message}`)
-    }
-
-    // Parse time slots
-    const timeSlots =
-      typeof sessionRow.time_slots === 'string'
-        ? JSON.parse(sessionRow.time_slots)
-        : sessionRow.time_slots
-
-    const matchesToCreate: Array<any> = []
-    const participantsToCreate: Array<any> = []
-
-    // Group votes by time slot and level
-    for (const timeSlot of timeSlots) {
-      for (const option of timeSlot.options) {
-        const votersForOption = votes?.filter(
-          (vote) => vote.option_id === option.id,
-        )
-
-        if (!votersForOption || votersForOption.length === 0) {
-          // No votes for this option, create empty match slots
-          const matchId = uid.rnd()
-          matchesToCreate.push({
-            session_id: sessionRow.id,
-            public_id: matchId,
-            time_slot_id: timeSlot.id,
-            level: option.level,
-            start_time: timeSlot.range[0],
-            end_time: timeSlot.range[1],
-            max_players: sessionRow.limit_players
-              ? sessionRow.players_per_slot || 4
-              : 4,
-          })
-        } else {
-          // Create matches based on votes (4 players per match)
-          const playersPerMatch = sessionRow.limit_players
-            ? sessionRow.players_per_slot || 4
-            : 4
-
-          const matchesNeeded = Math.ceil(
-            votersForOption.length / playersPerMatch,
-          )
-
-          for (let i = 0; i < matchesNeeded; i++) {
-            const matchId = uid.rnd()
-            matchesToCreate.push({
-              session_id: sessionRow.id,
-              public_id: matchId,
-              time_slot_id: timeSlot.id,
-              level: option.level,
-              start_time: timeSlot.range[0],
-              end_time: timeSlot.range[1],
-              max_players: playersPerMatch,
-            })
-
-            // Assign players to this match
-            const playersForThisMatch = votersForOption.slice(
-              i * playersPerMatch,
-              (i + 1) * playersPerMatch,
-            )
-
-            for (const vote of playersForThisMatch) {
-              participantsToCreate.push({
-                match_public_id: matchId,
-                player_id: vote.player_id,
-                source: 'vote',
-              })
-            }
-          }
-
-          // If last match isn't full, it has open slots for manual joining
-        }
-      }
-    }
-
-    // Insert matches
-    const { data: insertedMatches, error: matchesError } = await supabase
-      .from('matches')
-      .insert(matchesToCreate)
-      .select()
-
-    if (matchesError) {
-      console.error('Error creating matches:', matchesError)
-      throw new Error(`Failed to create matches: ${matchesError.message}`)
-    }
-
-    // Create a map of public_id to id for participants
-    const matchIdMap = new Map(
-      insertedMatches.map((match) => [match.public_id, match.id]),
-    )
-
-    // Update participants with actual match IDs
-    const participantsWithIds = participantsToCreate
-      .map((p) => ({
-        match_id: matchIdMap.get(p.match_public_id),
-        player_id: p.player_id,
-        source: p.source,
-      }))
-      .filter((p) => p.match_id !== undefined) as Array<{
-      match_id: number
-      player_id: string
-      source: string
-    }>
-
-    // Insert participants
-    if (participantsWithIds.length > 0) {
-      const { error: participantsError } = await supabase
-        .from('match_participants')
-        .insert(participantsWithIds)
-
-      if (participantsError) {
-        console.error('Error creating participants:', participantsError)
-        throw new Error(
-          `Failed to add players to matches: ${participantsError.message}`,
-        )
-      }
-    }
-
-    return { success: true, matchesCreated: insertedMatches.length }
+    // Delegate to the helper function
+    return generateMatchesHelper(data.sessionPublicId)
   })
 
 export const useVoteForSession = ({ sessionId }: { sessionId: string }) => {

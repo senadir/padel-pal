@@ -163,10 +163,16 @@ function RouteComponent() {
       updateSessionStatus({
         data: { sessionPublicId: id, status },
       }),
-    onSuccess: () => {
+    onSuccess: (_data, status) => {
       queryClient.invalidateQueries({ queryKey: ['sessions'] })
 
-      toast.success('Session marked as ready for voting')
+      if (status === 'open') {
+        toast.success('Poll closed and matches created')
+        // Navigate to matches page after closing poll
+        navigate({ to: '/sessions/$id/matches', params: { id } })
+      } else {
+        toast.success('Session marked as ready for voting')
+      }
     },
     onError: (error) => {
       console.error('Error updating session status:', error)
@@ -278,12 +284,17 @@ function RouteComponent() {
                   Mark as Ready for Voting
                 </Button>
               ) : (
-                <Button type="submit" disabled={!generatedGamesCount}>
-                  <Link to={Route.fullPath + '/matches'}>
-                    {generatedGamesCount === 0
-                      ? 'Close poll'
-                      : `Close poll and create ${generatedGamesCount} options`}
-                  </Link>
+                <Button
+                  type="button"
+                  onClick={() => updateStatusMutation.mutate('open')}
+                  disabled={!generatedGamesCount || updateStatusMutation.isPending}
+                >
+                  {updateStatusMutation.isPending && (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  )}
+                  {generatedGamesCount === 0
+                    ? 'Close poll'
+                    : `Close poll and create ${generatedGamesCount} matches`}
                 </Button>
               )}
               <AlertDialog>
