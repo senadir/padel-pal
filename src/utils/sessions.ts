@@ -12,7 +12,7 @@ import ShortUniqueId from 'short-unique-id'
 import { format, formatISO } from 'date-fns'
 import { getSupabaseServerClient } from './supabase'
 import { upsertVenue } from './venues'
-import type { Match, Player, Session, SessionForm } from './types'
+import type { Match, Player, Session, SessionForm, SessionVenue } from './types'
 
 // Types for match generation function
 interface VoteInput {
@@ -270,10 +270,22 @@ export const fetchSession = createServerFn({ method: 'GET' })
           return aTime - bTime
         })
 
+      // Parse venues from JSON or create from legacy fields
+      const venues: SessionVenue[] = sessionRow.venues
+        ? typeof sessionRow.venues === 'string'
+          ? JSON.parse(sessionRow.venues)
+          : sessionRow.venues
+        : [
+            {
+              name: sessionRow.venue_name || '',
+              location: sessionRow.venue_location || '',
+              isPrimary: true,
+            },
+          ]
+
       const session: Session = {
         id: sessionRow.public_id,
-        venueName: sessionRow.venue_name || '',
-        venueLocation: sessionRow.venue_location || '',
+        venues,
         date: sessionDate,
         levels: (sessionRow.levels || []).map((level) => ({
           level,
@@ -282,6 +294,9 @@ export const fetchSession = createServerFn({ method: 'GET' })
         timeSlots,
         limitPlayers: sessionRow.limit_players || false,
         playersPerSlot: sessionRow.players_per_slot || undefined,
+        votingClosesAt: sessionRow.voting_closes_at
+          ? new Date(sessionRow.voting_closes_at)
+          : undefined,
         status: sessionRow.status,
       }
 
@@ -297,7 +312,7 @@ export const fetchSession = createServerFn({ method: 'GET' })
 
 export const fetchMatches = createServerFn({ method: 'GET' })
   .inputValidator((sessionId: string) => sessionId)
-  .handler(async ({ data: sessionPublicId }) => {
+  .handler(async ({ data: sessionPublicId }): Promise<Match[]> => {
     try {
       const supabase = getSupabaseServerClient()
 
@@ -339,8 +354,8 @@ export const fetchMatches = createServerFn({ method: 'GET' })
       }
 
       // Transform database matches to Match type
-      const matches = matchesData.map((match) => {
-        const participants = (match.match_participants as Array<any>) || []
+      const matches: Match[] = matchesData.map((match) => {
+        const participants = match.match_participants
         const players = participants.map((p) => ({
           ...p.players,
           status: 'draft' as const, // Default status for now
@@ -992,11 +1007,21 @@ export const useMatchActions = ({
 }
 
 export const createSessionValidator = z.object({
-  venueName: z.string().min(1, { message: 'Venue name is required' }),
-  venueLocation: z
-    .string()
-    .url({ message: 'Please enter a valid URL for the venue' }),
-  venuePlaceId: z.string().min(1, { message: 'Venue Place ID is required' }),
+  venues: z
+    .array(
+      z.object({
+        name: z.string().min(1, { message: 'Venue name is required' }),
+        location: z
+          .string()
+          .url({ message: 'Please enter a valid URL for the venue' }),
+        placeId: z.string().optional(),
+        isPrimary: z.boolean(),
+      }),
+    )
+    .min(1, { message: 'At least one venue is required' })
+    .refine((venues) => venues.filter((v) => v.isPrimary).length === 1, {
+      message: 'Exactly one venue must be marked as primary',
+    }),
   date: z.date(),
   levels: z
     .array(
@@ -1042,22 +1067,27 @@ export const createSession = createServerFn({ method: 'POST' })
       try {
         const supabase = getSupabaseServerClient()
 
-        // Save venue to database for future autocomplete
-        const { venueName, venueLocation, venuePlaceId } = data
-        if (venueName && venueLocation && venuePlaceId) {
-          try {
-            await upsertVenue({
-              data: {
-                label: venueName,
-                mapsUrl: venueLocation,
-                placeId: venuePlaceId,
-              },
-            })
-          } catch (error) {
-            // Log error but don't fail session creation
-            console.error('Error saving venue:', error)
+        // Save all venues to database for future autocomplete
+        for (const venue of data.venues) {
+          if (venue.name && venue.location && venue.placeId) {
+            try {
+              await upsertVenue({
+                data: {
+                  label: venue.name,
+                  mapsUrl: venue.location,
+                  placeId: venue.placeId,
+                },
+              })
+            } catch (error) {
+              // Log error but don't fail session creation
+              console.error('Error saving venue:', error)
+            }
           }
         }
+
+        // Get primary venue for legacy fields
+        const primaryVenue =
+          data.venues.find((v) => v.isPrimary) || data.venues[0]
 
         // Generate unique session ID
         const uid = new ShortUniqueId({ length: 8 })
@@ -1102,8 +1132,9 @@ export const createSession = createServerFn({ method: 'POST' })
         // Insert session into Supabase
         const sessionData = {
           public_id: uid.rnd(),
-          venue_name: data.venueName,
-          venue_location: data.venueLocation,
+          venue_name: primaryVenue.name,
+          venue_location: primaryVenue.location,
+          venues: JSON.stringify(data.venues),
           // Combine session.date and session.time into a single ISO datetime string for the "date" field.
           date: formatISO(data.date),
           levels: data.levels.map((l) => l.level),

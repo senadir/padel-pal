@@ -260,6 +260,7 @@ export type Database = {
           time_slots: Json | null
           venue_location: string | null
           venue_name: string | null
+          venues: Json | null
           voting_closes_at: string | null
         }
         Insert: {
@@ -275,6 +276,7 @@ export type Database = {
           time_slots?: Json | null
           venue_location?: string | null
           venue_name?: string | null
+          venues?: Json | null
           voting_closes_at?: string | null
         }
         Update: {
@@ -290,6 +292,7 @@ export type Database = {
           time_slots?: Json | null
           venue_location?: string | null
           venue_name?: string | null
+          venues?: Json | null
           voting_closes_at?: string | null
         }
         Relationships: []

@@ -16,6 +16,7 @@ import { Route as SessionsNewRouteImport } from './routes/sessions/new'
 import { Route as SessionsIdRouteImport } from './routes/sessions/$id'
 import { Route as LoginPlaytomicRouteImport } from './routes/login/playtomic'
 import { Route as LoginOtpRouteImport } from './routes/login/otp'
+import { Route as SessionsIdMatchIdRouteImport } from './routes/sessions/$id.$matchId'
 
 const LogoutRoute = LogoutRouteImport.update({
   id: '/logout',
@@ -52,24 +53,31 @@ const LoginOtpRoute = LoginOtpRouteImport.update({
   path: '/login/otp',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SessionsIdMatchIdRoute = SessionsIdMatchIdRouteImport.update({
+  id: '/$matchId',
+  path: '/$matchId',
+  getParentRoute: () => SessionsIdRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/logout': typeof LogoutRoute
   '/login/otp': typeof LoginOtpRoute
   '/login/playtomic': typeof LoginPlaytomicRoute
-  '/sessions/$id': typeof SessionsIdRoute
+  '/sessions/$id': typeof SessionsIdRouteWithChildren
   '/sessions/new': typeof SessionsNewRoute
   '/login': typeof LoginIndexRoute
+  '/sessions/$id/$matchId': typeof SessionsIdMatchIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/logout': typeof LogoutRoute
   '/login/otp': typeof LoginOtpRoute
   '/login/playtomic': typeof LoginPlaytomicRoute
-  '/sessions/$id': typeof SessionsIdRoute
+  '/sessions/$id': typeof SessionsIdRouteWithChildren
   '/sessions/new': typeof SessionsNewRoute
   '/login': typeof LoginIndexRoute
+  '/sessions/$id/$matchId': typeof SessionsIdMatchIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -77,9 +85,10 @@ export interface FileRoutesById {
   '/logout': typeof LogoutRoute
   '/login/otp': typeof LoginOtpRoute
   '/login/playtomic': typeof LoginPlaytomicRoute
-  '/sessions/$id': typeof SessionsIdRoute
+  '/sessions/$id': typeof SessionsIdRouteWithChildren
   '/sessions/new': typeof SessionsNewRoute
   '/login/': typeof LoginIndexRoute
+  '/sessions/$id/$matchId': typeof SessionsIdMatchIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -91,6 +100,7 @@ export interface FileRouteTypes {
     | '/sessions/$id'
     | '/sessions/new'
     | '/login'
+    | '/sessions/$id/$matchId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -100,6 +110,7 @@ export interface FileRouteTypes {
     | '/sessions/$id'
     | '/sessions/new'
     | '/login'
+    | '/sessions/$id/$matchId'
   id:
     | '__root__'
     | '/'
@@ -109,6 +120,7 @@ export interface FileRouteTypes {
     | '/sessions/$id'
     | '/sessions/new'
     | '/login/'
+    | '/sessions/$id/$matchId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -116,7 +128,7 @@ export interface RootRouteChildren {
   LogoutRoute: typeof LogoutRoute
   LoginOtpRoute: typeof LoginOtpRoute
   LoginPlaytomicRoute: typeof LoginPlaytomicRoute
-  SessionsIdRoute: typeof SessionsIdRoute
+  SessionsIdRoute: typeof SessionsIdRouteWithChildren
   SessionsNewRoute: typeof SessionsNewRoute
   LoginIndexRoute: typeof LoginIndexRoute
 }
@@ -172,15 +184,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginOtpRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/sessions/$id/$matchId': {
+      id: '/sessions/$id/$matchId'
+      path: '/$matchId'
+      fullPath: '/sessions/$id/$matchId'
+      preLoaderRoute: typeof SessionsIdMatchIdRouteImport
+      parentRoute: typeof SessionsIdRoute
+    }
   }
 }
+
+interface SessionsIdRouteChildren {
+  SessionsIdMatchIdRoute: typeof SessionsIdMatchIdRoute
+}
+
+const SessionsIdRouteChildren: SessionsIdRouteChildren = {
+  SessionsIdMatchIdRoute: SessionsIdMatchIdRoute,
+}
+
+const SessionsIdRouteWithChildren = SessionsIdRoute._addFileChildren(
+  SessionsIdRouteChildren,
+)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LogoutRoute: LogoutRoute,
   LoginOtpRoute: LoginOtpRoute,
   LoginPlaytomicRoute: LoginPlaytomicRoute,
-  SessionsIdRoute: SessionsIdRoute,
+  SessionsIdRoute: SessionsIdRouteWithChildren,
   SessionsNewRoute: SessionsNewRoute,
   LoginIndexRoute: LoginIndexRoute,
 }

@@ -9,7 +9,7 @@ export type Option = {
   id: string
   slot: { id: string; range: [Date, Date] }
   level: string
-  players: Array<Player & { votedAt?: Date }>
+  players: Array<Player & { votedAt: Date }>
 }
 
 export type PlaytomicMatch = {
@@ -22,18 +22,26 @@ export interface Match extends Option {
   sessionId: string
   playtomicMatch: PlaytomicMatch | null
   status: 'played' | 'scheduled' | 'draft' | 'cancelled'
-  players: Array<Player & { status?: 'paid' | 'pending' | 'draft' }>
+  players: Array<
+    Option['players'][number] & { status?: 'paid' | 'pending' | 'draft' }
+  >
 }
+
+export type SessionVenue = {
+  name: string
+  location: string
+  placeId?: string
+  isPrimary: boolean
+}
+
 export type SessionForm = {
-  venueName: string
-  venueLocation: string
-  venuePlaceId?: string
+  venues: Array<SessionVenue>
   date: Date
   levels: Array<{
     level: string
     timeSlots: Array<{ id: string; range: [Date, Date] }>
   }>
-  timeBlocks: string
+  timeBlocks: '60' | '90'
   limitPlayers: boolean
   playersPerSlot?: number
   votingClosesAt?: Date
