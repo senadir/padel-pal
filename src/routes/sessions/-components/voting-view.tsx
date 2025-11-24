@@ -370,7 +370,7 @@ const GameSlot = ({
                 title="View all players and vote times"
               >
                 {option.players
-                  .sort((a, b) => b.votedAt - a.votedAt)
+                  .sort((a, b) => b.votedAt.getTime() - a.votedAt.getTime())
                   .slice(0, 4)
                   .map((player: Player) => (
                     <Avatar key={player.id} className="size-5">

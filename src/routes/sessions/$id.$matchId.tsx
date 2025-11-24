@@ -39,7 +39,6 @@ export const Route = createFileRoute('/sessions/$id/$matchId')({
 })
 
 function MatchModalPendingComponent() {
-  console.log('MatchModalPendingComponent')
   return (
     <DrawerDialog open={true} setOpen={() => {}}>
       <DrawerDialogContent>
@@ -86,7 +85,6 @@ function MatchModalComponent() {
   const handleToggleParticipation = () => {
     // This will be handled by the parent component's mutation
     // For now, we'll just close the modal
-    console.log('Toggle participation for match:', matchId)
   }
 
   if (!activeMatch) {

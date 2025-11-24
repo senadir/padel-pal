@@ -16,7 +16,9 @@ import { Route as SessionsNewRouteImport } from './routes/sessions/new'
 import { Route as SessionsIdRouteImport } from './routes/sessions/$id'
 import { Route as LoginPlaytomicRouteImport } from './routes/login/playtomic'
 import { Route as LoginOtpRouteImport } from './routes/login/otp'
+import { Route as ApiWhatsappWebhookRouteImport } from './routes/api/whatsapp-webhook'
 import { Route as SessionsIdMatchIdRouteImport } from './routes/sessions/$id.$matchId'
+import { Route as ApiSyncMatchPublicMatchIdRouteImport } from './routes/api/sync-match.$publicMatchId'
 
 const LogoutRoute = LogoutRouteImport.update({
   id: '/logout',
@@ -53,41 +55,58 @@ const LoginOtpRoute = LoginOtpRouteImport.update({
   path: '/login/otp',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiWhatsappWebhookRoute = ApiWhatsappWebhookRouteImport.update({
+  id: '/api/whatsapp-webhook',
+  path: '/api/whatsapp-webhook',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SessionsIdMatchIdRoute = SessionsIdMatchIdRouteImport.update({
   id: '/$matchId',
   path: '/$matchId',
   getParentRoute: () => SessionsIdRoute,
 } as any)
+const ApiSyncMatchPublicMatchIdRoute =
+  ApiSyncMatchPublicMatchIdRouteImport.update({
+    id: '/api/sync-match/$publicMatchId',
+    path: '/api/sync-match/$publicMatchId',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/logout': typeof LogoutRoute
+  '/api/whatsapp-webhook': typeof ApiWhatsappWebhookRoute
   '/login/otp': typeof LoginOtpRoute
   '/login/playtomic': typeof LoginPlaytomicRoute
   '/sessions/$id': typeof SessionsIdRouteWithChildren
   '/sessions/new': typeof SessionsNewRoute
   '/login': typeof LoginIndexRoute
+  '/api/sync-match/$publicMatchId': typeof ApiSyncMatchPublicMatchIdRoute
   '/sessions/$id/$matchId': typeof SessionsIdMatchIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/logout': typeof LogoutRoute
+  '/api/whatsapp-webhook': typeof ApiWhatsappWebhookRoute
   '/login/otp': typeof LoginOtpRoute
   '/login/playtomic': typeof LoginPlaytomicRoute
   '/sessions/$id': typeof SessionsIdRouteWithChildren
   '/sessions/new': typeof SessionsNewRoute
   '/login': typeof LoginIndexRoute
+  '/api/sync-match/$publicMatchId': typeof ApiSyncMatchPublicMatchIdRoute
   '/sessions/$id/$matchId': typeof SessionsIdMatchIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/logout': typeof LogoutRoute
+  '/api/whatsapp-webhook': typeof ApiWhatsappWebhookRoute
   '/login/otp': typeof LoginOtpRoute
   '/login/playtomic': typeof LoginPlaytomicRoute
   '/sessions/$id': typeof SessionsIdRouteWithChildren
   '/sessions/new': typeof SessionsNewRoute
   '/login/': typeof LoginIndexRoute
+  '/api/sync-match/$publicMatchId': typeof ApiSyncMatchPublicMatchIdRoute
   '/sessions/$id/$matchId': typeof SessionsIdMatchIdRoute
 }
 export interface FileRouteTypes {
@@ -95,42 +114,50 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/logout'
+    | '/api/whatsapp-webhook'
     | '/login/otp'
     | '/login/playtomic'
     | '/sessions/$id'
     | '/sessions/new'
     | '/login'
+    | '/api/sync-match/$publicMatchId'
     | '/sessions/$id/$matchId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/logout'
+    | '/api/whatsapp-webhook'
     | '/login/otp'
     | '/login/playtomic'
     | '/sessions/$id'
     | '/sessions/new'
     | '/login'
+    | '/api/sync-match/$publicMatchId'
     | '/sessions/$id/$matchId'
   id:
     | '__root__'
     | '/'
     | '/logout'
+    | '/api/whatsapp-webhook'
     | '/login/otp'
     | '/login/playtomic'
     | '/sessions/$id'
     | '/sessions/new'
     | '/login/'
+    | '/api/sync-match/$publicMatchId'
     | '/sessions/$id/$matchId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LogoutRoute: typeof LogoutRoute
+  ApiWhatsappWebhookRoute: typeof ApiWhatsappWebhookRoute
   LoginOtpRoute: typeof LoginOtpRoute
   LoginPlaytomicRoute: typeof LoginPlaytomicRoute
   SessionsIdRoute: typeof SessionsIdRouteWithChildren
   SessionsNewRoute: typeof SessionsNewRoute
   LoginIndexRoute: typeof LoginIndexRoute
+  ApiSyncMatchPublicMatchIdRoute: typeof ApiSyncMatchPublicMatchIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -184,12 +211,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginOtpRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/whatsapp-webhook': {
+      id: '/api/whatsapp-webhook'
+      path: '/api/whatsapp-webhook'
+      fullPath: '/api/whatsapp-webhook'
+      preLoaderRoute: typeof ApiWhatsappWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/sessions/$id/$matchId': {
       id: '/sessions/$id/$matchId'
       path: '/$matchId'
       fullPath: '/sessions/$id/$matchId'
       preLoaderRoute: typeof SessionsIdMatchIdRouteImport
       parentRoute: typeof SessionsIdRoute
+    }
+    '/api/sync-match/$publicMatchId': {
+      id: '/api/sync-match/$publicMatchId'
+      path: '/api/sync-match/$publicMatchId'
+      fullPath: '/api/sync-match/$publicMatchId'
+      preLoaderRoute: typeof ApiSyncMatchPublicMatchIdRouteImport
+      parentRoute: typeof rootRouteImport
     }
   }
 }
@@ -209,11 +250,13 @@ const SessionsIdRouteWithChildren = SessionsIdRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LogoutRoute: LogoutRoute,
+  ApiWhatsappWebhookRoute: ApiWhatsappWebhookRoute,
   LoginOtpRoute: LoginOtpRoute,
   LoginPlaytomicRoute: LoginPlaytomicRoute,
   SessionsIdRoute: SessionsIdRouteWithChildren,
   SessionsNewRoute: SessionsNewRoute,
   LoginIndexRoute: LoginIndexRoute,
+  ApiSyncMatchPublicMatchIdRoute: ApiSyncMatchPublicMatchIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

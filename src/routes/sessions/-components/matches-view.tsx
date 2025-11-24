@@ -1,205 +1,192 @@
 import { format } from 'date-fns'
-import { useState } from 'react'
-import { ChevronsDownUp, ChevronsUpDown, PlusIcon } from 'lucide-react'
-import { useNavigate, Link } from '@tanstack/react-router'
-import type { Match, Player, Session } from '@/utils/types'
-import { FieldLegend } from '@/components/ui/field'
-import { SeparatorWithTitle } from '@/components/ui/separator-title'
+import { MapPin, Clock, ExternalLink, PlusIcon } from 'lucide-react'
+import type {
+  Match,
+  Session,
+  MatchPlayer,
+  PlayerSyncStatus,
+} from '@/utils/types'
+import { Card, CardContent } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible'
-import { Item, ItemActions, ItemContent, ItemMedia } from '@/components/ui/item'
-import { useMatchActions } from '@/utils/sessions'
-import { useAuth } from '@/contexts/auth'
-import { Route } from '../$id'
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
+import { cva } from 'class-variance-authority'
+import { computePlayerSyncStatus } from '@/utils/match-sync'
 
-export const MatchesView = ({
-  session,
-  matches,
-}: {
-  session: Session
+interface MatchesViewProps {
   matches: Match[]
-}) => {
-  const navigate = useNavigate({ from: Route.fullPath })
-  const sessionId = session.id
-  const { authData } = useAuth()
+  session: Session
+}
 
-  // Check if user is fully authenticated
-  const currentUser = authData?.player
-  const isFullyAuthenticated = !!(
-    authData?.user &&
-    authData.isPhoneVerified &&
-    authData.hasPlaytomicProfile
-  )
-
-  const { isLoading } = useMatchActions({
-    sessionId,
-    currentUserId: currentUser?.id || '',
-  })
-
-  // Group matches by timeSlot and level
-  const groupedMatches: Record<string, Record<string, Array<Match>>> = {}
-  matches.forEach((match) => {
-    const timeSlot = match.slot
-    const level = match.level
-    if (!groupedMatches[timeSlot.id]) {
-      groupedMatches[timeSlot.id] = {}
-    }
-    if (!groupedMatches[timeSlot.id][level]) {
-      groupedMatches[timeSlot.id][level] = []
-    }
-    groupedMatches[timeSlot.id][level].push(match as Match)
-  })
-
+export function MatchesView({ matches, session }: MatchesViewProps) {
   return (
-    <div className="flex flex-col gap-12">
-      {Object.entries(groupedMatches).map(([timeSlotId, levels]) =>
-        Object.entries(levels).map(([level, ms]) => (
-          <div
-            key={timeSlotId + '-' + level}
-            className="flex flex-col gap-4 relative"
-          >
-            <SeparatorWithTitle
-              leftTitle={timeSlotId}
-              rightTitle={level}
-              className="sticky top-0 z-10 bg-background"
-            />
-            <div className="flex flex-col gap-4">
-              {ms.map((match) => (
-                <MatchSlot
-                  key={match.id}
-                  match={match}
-                  currentUser={currentUser}
-                  isLoading={isLoading}
-                />
-              ))}
-            </div>
-          </div>
-        )),
-      )}
+    <div className="space-y-4">
+      {matches.map((match) => (
+        <MatchCard key={match.id} match={match} session={session} />
+      ))}
     </div>
   )
 }
 
-const MatchSlot = ({
-  match,
-  currentUser,
-  isLoading,
-  defaultOpen = false,
-}: {
-  match: Match
-  currentUser: Player | null | undefined
-  isLoading: boolean
-  defaultOpen?: boolean
-}) => {
-  const [open, setOpen] = useState(defaultOpen)
-  const { id: sessionId } = Route.useParams()
+const levelBadgeVariants = cva('capitalize', {
+  variants: {
+    level: {
+      beginner:
+        'border-transparent bg-green-100 text-green-800 hover:bg-green-100/80',
+      improver:
+        'border-transparent bg-blue-100 text-blue-800 hover:bg-blue-100/80',
+      intermediate:
+        'border-transparent bg-yellow-100 text-yellow-800 hover:bg-yellow-100/80',
+      advanced:
+        'border-transparent bg-red-100 text-red-800 hover:bg-red-100/80',
+    },
+  },
+  defaultVariants: {
+    level: 'beginner',
+  },
+})
+
+const playerAvatarVariants = cva('size-10 border-2', {
+  variants: {
+    syncStatus: {
+      synced_paid: 'border-emerald-500', // In both + paid
+      synced_unpaid: 'border-amber-500', // In both + unpaid
+      only_local: 'border-rose-500', // Only in our match
+      only_playtomic: 'border-violet-500', // Only in Playtomic
+      unconnected: 'border-gray-500', // Match not connected to Playtomic
+    },
+  },
+})
+
+const getPlayerSyncStatusTooltip = (syncStatus: PlayerSyncStatus) => {
+  switch (syncStatus) {
+    case 'synced_paid':
+      return 'Paid on Playtomic'
+    case 'synced_unpaid':
+      return 'Unpaid on Playtomic'
+    case 'only_local':
+      return 'Not on Playtomic'
+    case 'only_playtomic':
+      return 'Player only exists on Playtomic'
+    case 'unconnected':
+      return 'Player not connected to Playtomic'
+    default:
+      return 'Unknown sync status'
+  }
+}
+
+function MatchCard({ match, session }: { match: Match; session: Session }) {
+  const startTime = format(new Date(match.slot.range[0]), 'HH:mm')
+  const endTime = format(new Date(match.slot.range[1]), 'HH:mm')
+  const sessionDate = format(new Date(session.date), 'EEEE, MMMM do')
+
+  // Compute synced players with status
+  const syncedPlayers: MatchPlayer[] = match.playtomicMatch
+    ? computePlayerSyncStatus(
+        match.players,
+        match.playtomicMatch.playtomic_players,
+      )
+    : match.players.map((p) => ({ ...p, syncStatus: 'unconnected' as const }))
 
   return (
-    <Collapsible open={open} onOpenChange={setOpen}>
-      <Item variant="outline" size="default">
-        <CollapsibleTrigger asChild>
-          <div className="flex w-full items-center cursor-pointer">
-            <ItemMedia>
-              <div className="*:data-[slot=avatar]:ring-background flex space-x-2 *:data-[slot=avatar]:ring-2">
-                {match.players.map((player: Player) => (
-                  <Avatar key={player.id} className="size-6">
-                    <AvatarImage
-                      src={player.avatar ?? undefined}
-                      alt={player.name ?? undefined}
-                    />
-                    <AvatarFallback delayMs={700}>
-                      {player.name?.charAt(0) || '?'}
-                    </AvatarFallback>
-                  </Avatar>
-                ))}
-                {match.players.length < 4 &&
-                  Array.from({ length: 4 - match.players.length }).map(
-                    (_, i) => (
-                      <div
-                        key={`empty-${i}`}
-                        className="size-6 flex items-center justify-center rounded-full border-1 border-dashed border"
-                      ></div>
-                    ),
-                  )}
-              </div>
-            </ItemMedia>
+    <Card className="overflow-hidden">
+      <CardContent className="p-6 space-y-3">
+        {/* Header with date and status */}
+        <div className="flex items-start justify-between">
+          <h3 className="text font-semibold">{sessionDate}</h3>
+          <Badge variant={session.status === 'open' ? 'default' : 'outline'}>
+            {session.status === 'open' ? 'Open' : session.status}
+          </Badge>
+        </div>
 
-            <ItemActions className="ml-auto">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-8"
-                tabIndex={-1}
-                type="button"
-                aria-label="Toggle"
-              >
-                {open ? <ChevronsDownUp /> : <ChevronsUpDown />}
-                <span className="sr-only">Toggle</span>
-              </Button>
-            </ItemActions>
+        <div className="flex flex-col gap-2">
+          {/* Venue */}
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <MapPin className="size-4" />
+            <span className="text-xs font-medium">
+              {session.venues[0]?.name}
+            </span>
           </div>
-        </CollapsibleTrigger>
-        {open && (
-          <ItemContent>
-            <CollapsibleContent>
-              <div className="grid grid-cols-2 gap-2">
-                {match.players.map((player: Player) => {
-                  const isCurrentUser = currentUser?.id === player.id
-                  return (
-                    <Link
-                      key={player.id}
-                      to="/sessions/$id/$matchId"
-                      params={{ id: sessionId, matchId: match.id }}
-                      disabled={isLoading}
-                      preload="render"
-                      className="flex gap-2 items-center cursor-pointer hover:opacity-80 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <Avatar className="size-8">
-                        <AvatarImage
-                          src={player.avatar ?? undefined}
-                          alt={player.name ?? undefined}
-                        />
-                        <AvatarFallback delayMs={700}>
-                          {player.name?.charAt(0) || '?'}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="text-sm font-medium">
-                        {player.name}
-                        {isCurrentUser && ' (You)'}
-                      </div>
-                    </Link>
-                  )
-                })}
-                {match.players.length < 4 &&
-                  Array.from({ length: 4 - match.players.length }).map(
-                    (_, i) => (
-                      <Link
-                        key={`empty-${i}`}
-                        to="/sessions/$id/$matchId"
-                        params={{ id: sessionId, matchId: match.id }}
-                        preload="render"
-                        disabled={isLoading}
-                        className="flex gap-2 items-center cursor-pointer hover:opacity-80 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <div className="size-8 flex items-center justify-center rounded-full border-1 border-dashed border">
-                          <PlusIcon className="size-4 text-muted-foreground" />
-                        </div>
-                        <span className="text-muted-foreground text-sm">
-                          {isLoading ? 'Loading...' : 'Click to join'}
-                        </span>
-                      </Link>
-                    ),
-                  )}
-              </div>
-            </CollapsibleContent>
-          </ItemContent>
+
+          {/* Time */}
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <Clock className="size-4" />
+            <span className="text-xs font-medium">
+              {startTime} - {endTime}
+            </span>
+          </div>
+
+          {/* Level Badge */}
+          <div>
+            <Badge className={levelBadgeVariants({ level: match.level })}>
+              {match.level}
+            </Badge>
+          </div>
+        </div>
+
+        {/* Player Avatars */}
+        <div className="flex gap-2">
+          {syncedPlayers.map((player) => (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Avatar
+                  key={player.id}
+                  className={playerAvatarVariants({
+                    syncStatus: player.syncStatus,
+                  })}
+                >
+                  <AvatarImage
+                    src={player.avatar || undefined}
+                    alt={player.name || 'Player'}
+                  />
+                  <AvatarFallback>
+                    {player.name?.charAt(0).toUpperCase() || 'P'}
+                  </AvatarFallback>
+                </Avatar>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{getPlayerSyncStatusTooltip(player.syncStatus)}</p>
+              </TooltipContent>
+            </Tooltip>
+          ))}
+          {/* Show empty slots */}
+          {Array.from({ length: Math.max(0, 4 - syncedPlayers.length) }).map(
+            (_, i) => (
+              <Avatar
+                key={`empty-${i}`}
+                className="size-10 border-2 border-dashed"
+              >
+                <AvatarFallback className="bg-muted/50">
+                  <PlusIcon className="h-4 w-4 text-muted-foreground" />
+                </AvatarFallback>
+              </Avatar>
+            ),
+          )}
+        </div>
+
+        {match.playtomicMatch ? (
+          <Button className="w-full" asChild variant="outline" size="lg">
+            <a
+              href={match.playtomicMatch.match_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-2"
+            >
+              Open in Playtomic
+              <ExternalLink className="h-4 w-4" />
+            </a>
+          </Button>
+        ) : (
+          <Button className="w-full" disabled variant="outline" size="lg">
+            Not on playtomic yet
+          </Button>
         )}
-      </Item>
-    </Collapsible>
+      </CardContent>
+    </Card>
   )
 }

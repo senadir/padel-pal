@@ -82,13 +82,13 @@ function RouteComponent() {
           </h1>
           <FieldLegend className="flex flex-col gap-2">
             <div>
-              <Link
+              <a
                 to={session.venues[0].location}
                 target="_blank"
                 className="text-sm text-muted-foreground"
               >
                 <span className="underline">{session.venues[0].name}</span>
-              </Link>
+              </a>
               {session.venues.length === 2 && (
                 <span className="text-muted-foreground text-sm">
                   {' '}
@@ -108,6 +108,11 @@ function RouteComponent() {
                 </span>
               )}
             </div>
+            <FieldDescription className="text-muted-foreground text-sm">
+              {showMatchesView
+                ? 'View your games and others, and see which games you can join.'
+                : 'Vote for which slots you want to play, each vote count as a option.'}
+            </FieldDescription>
             {session.votingClosesAt && (
               <p className="text-sm flex items-center gap-1">
                 <CircleAlert className="size-4" />
@@ -115,11 +120,6 @@ function RouteComponent() {
                 {format(session.votingClosesAt, 'EEE, MMM d • HH:mm')}
               </p>
             )}
-            <FieldDescription className="text-muted-foreground text-sm">
-              {showMatchesView
-                ? 'View your games and others, and see which games you can join.'
-                : 'Vote for which slots you want to play, each vote count as a option.'}
-            </FieldDescription>
           </FieldLegend>
         </div>
         {showMatchesView ? (

@@ -13,6 +13,7 @@ import type { User } from '@supabase/supabase-js'
 import type { Player } from '@/utils/types'
 import { getThemeServerFn } from '@/lib/theme'
 import { ThemeProvider } from '@/components/theme-provider'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { Header } from '@/components/header'
 import { Toaster } from '@/components/ui/sonner'
 import { NavigationProgress } from '@/components/navigation-progress'
@@ -91,23 +92,25 @@ function RootComponent() {
 
   return (
     <ThemeProvider theme={theme}>
-      <NavigationProgress />
-      <Header />
-      <div className="mx-auto max-w-md px-8">
-        <div className="mx-auto max-w-3xl my-8">
-          <Outlet />
+      <TooltipProvider delayDuration={0}>
+        <NavigationProgress />
+        <Header />
+        <div className="mx-auto max-w-md px-8">
+          <div className="mx-auto max-w-3xl my-8">
+            <Outlet />
+          </div>
         </div>
-      </div>
-      <Toaster />
-      <TanStackDevtools
-        plugins={[
-          TanStackQueryDevtools,
-          {
-            name: 'TanStack Router',
-            render: <TanStackRouterDevtoolsPanel />,
-          },
-        ]}
-      />
+        <Toaster />
+        <TanStackDevtools
+          plugins={[
+            TanStackQueryDevtools,
+            {
+              name: 'TanStack Router',
+              render: <TanStackRouterDevtoolsPanel />,
+            },
+          ]}
+        />
+      </TooltipProvider>
     </ThemeProvider>
   )
 }

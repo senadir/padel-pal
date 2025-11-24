@@ -39,6 +39,66 @@ interface GeneratedMatch {
 }
 
 /**
+ * Helper function to select the best booker for a match.
+ * Prioritizes players who are not already bookers in other matches in the session.
+ */
+async function selectBestBooker(
+  supabase: ReturnType<typeof getSupabaseServerClient>,
+  matchId: number,
+  sessionId: number,
+): Promise<number | null> {
+  // Get all participants of this match
+  const { data: participants, error: participantsError } = await supabase
+    .from('match_participants')
+    .select('id, player_id')
+    .eq('match_id', matchId)
+
+  if (participantsError || !participants || participants.length === 0) {
+    return null
+  }
+
+  // Get player IDs who are already bookers in other matches
+  const playersAlreadyBookers = new Set<string>()
+
+  // Query booker player IDs directly
+  const { data: bookerData, error: bookerError } = await supabase
+    .from('matches')
+    .select(
+      `
+      booker_id,
+      booker:match_participants!matches_booker_id_fkey(player_id)
+    `,
+    )
+    .eq('session_id', sessionId)
+    .neq('id', matchId)
+    .not('booker_id', 'is', null)
+
+  if (!bookerError && bookerData) {
+    for (const match of bookerData) {
+      const booker = match.booker as { player_id: string } | null
+      if (booker?.player_id) {
+        playersAlreadyBookers.add(booker.player_id)
+      }
+    }
+  }
+
+  // Shuffle participants randomly
+  const shuffled = [...participants].sort(() => Math.random() - 0.5)
+
+  // Sort so that players who are already bookers come last
+  shuffled.sort((a, b) => {
+    const aIsBooker = playersAlreadyBookers.has(a.player_id)
+    const bIsBooker = playersAlreadyBookers.has(b.player_id)
+    if (aIsBooker && !bIsBooker) return 1
+    if (!aIsBooker && bIsBooker) return -1
+    return 0
+  })
+
+  // Return the best candidate's participant ID
+  return shuffled[0].id
+}
+
+/**
  * Pure function to generate matches from voting results.
  * This is the external matching engine that can be replaced in the future.
  *
@@ -328,16 +388,18 @@ export const fetchMatches = createServerFn({ method: 'GET' })
         return []
       }
 
-      // Fetch all matches for this session with participants
+      // Fetch all matches for this session with participants and Playtomic data
+      // Use explicit FK reference to avoid ambiguity with booker_id relationship
       const { data: matchesData, error: matchesError } = await supabase
         .from('matches')
         .select(
           `
           *,
-          match_participants (
+          match_participants!match_participants_match_id_fkey (
             *,
             players (*)
-          )
+          ),
+          playtomic_matches (*)
         `,
         )
         .eq('session_id', sessionRow.id)
@@ -358,8 +420,34 @@ export const fetchMatches = createServerFn({ method: 'GET' })
         const participants = match.match_participants
         const players = participants.map((p) => ({
           ...p.players,
+          votedAt: new Date(p.joined_at), // Use joined_at as votedAt timestamp
           status: 'draft' as const, // Default status for now
         }))
+
+        // Transform Playtomic match data if it exists
+        const playtomicMatch = match.playtomic_matches
+          ? {
+              id: match.playtomic_matches.id,
+              playtomic_match_id: match.playtomic_matches.playtomic_match_id,
+              match_url: match.playtomic_matches.match_url,
+              club_name: match.playtomic_matches.club_name,
+              court_name: match.playtomic_matches.court_name,
+              start_time: match.playtomic_matches.start_time,
+              end_time: match.playtomic_matches.end_time,
+              playtomic_players: match.playtomic_matches.playtomic_players as any,
+              match_status: match.playtomic_matches.match_status as
+                | 'scheduled'
+                | 'played'
+                | 'cancelled'
+                | null,
+              score: match.playtomic_matches.score as
+                | { team1: number; team2: number }
+                | null,
+              last_synced_at: match.playtomic_matches.last_synced_at,
+              created_at: match.playtomic_matches.created_at,
+              updated_at: match.playtomic_matches.updated_at,
+            }
+          : null
 
         return {
           id: match.public_id,
@@ -368,9 +456,13 @@ export const fetchMatches = createServerFn({ method: 'GET' })
             id: match.time_slot_id,
             range: [new Date(match.start_time), new Date(match.end_time)],
           },
-          level: match.level,
+          level: match.level as
+            | 'beginner'
+            | 'improver'
+            | 'intermediate'
+            | 'advanced',
           players,
-          playtomicMatch: null, // No Playtomic integration yet
+          playtomicMatch,
           status: 'draft' as const, // Default status
         }
       })
@@ -497,7 +589,7 @@ export const joinMatch = createServerFn({ method: 'POST' })
     // Get match ID from public_id
     const { data: matchRow, error: matchError } = await supabase
       .from('matches')
-      .select('id, max_players, start_time, end_time, session_id')
+      .select('id, max_players, start_time, end_time, session_id, booker_id')
       .eq('public_id', data.matchPublicId)
       .single()
 
@@ -535,6 +627,26 @@ export const joinMatch = createServerFn({ method: 'POST' })
       throw new Error(`Failed to join match: ${error.message}`)
     }
 
+    // If match has no booker, assign the best one (considering session-wide fairness)
+    if (!matchRow.booker_id) {
+      const bestBookerId = await selectBestBooker(
+        supabase,
+        matchRow.id,
+        matchRow.session_id,
+      )
+      if (bestBookerId) {
+        const { error: updateError } = await supabase
+          .from('matches')
+          .update({ booker_id: bestBookerId })
+          .eq('id', matchRow.id)
+
+        if (updateError) {
+          console.error('Error assigning booker:', updateError)
+          // Don't fail the join operation for booker assignment
+        }
+      }
+    }
+
     return { success: true }
   })
 
@@ -551,16 +663,31 @@ export const unjoinMatch = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     const supabase = getSupabaseServerClient()
 
-    // Get match ID from public_id
+    // Get match ID from public_id along with booker info
     const { data: matchRow, error: matchError } = await supabase
       .from('matches')
-      .select('id')
+      .select('id, session_id, booker_id')
       .eq('public_id', data.matchPublicId)
       .single()
 
     if (matchError || !matchRow) {
       throw new Error('Match not found')
     }
+
+    // Get the participant ID before deleting (to check if they are the booker)
+    const { data: participantRow, error: participantError } = await supabase
+      .from('match_participants')
+      .select('id')
+      .eq('match_id', matchRow.id)
+      .eq('player_id', data.playerId)
+      .single()
+
+    if (participantError || !participantRow) {
+      throw new Error('Participant not found')
+    }
+
+    const leavingParticipantId = participantRow.id
+    const isLeavingBooker = matchRow.booker_id === leavingParticipantId
 
     // Delete the participant
     const { error } = await supabase
@@ -572,6 +699,26 @@ export const unjoinMatch = createServerFn({ method: 'POST' })
     if (error) {
       console.error('Error leaving match:', error)
       throw new Error(`Failed to leave match: ${error.message}`)
+    }
+
+    // If the leaving player was the booker, reassign to another participant
+    if (isLeavingBooker) {
+      const newBookerId = await selectBestBooker(
+        supabase,
+        matchRow.id,
+        matchRow.session_id,
+      )
+
+      // Update booker_id (will be null if no participants left)
+      const { error: updateError } = await supabase
+        .from('matches')
+        .update({ booker_id: newBookerId })
+        .eq('id', matchRow.id)
+
+      if (updateError) {
+        console.error('Error reassigning booker:', updateError)
+        // Don't fail the unjoin operation for booker reassignment
+      }
     }
 
     return { success: true }
@@ -689,15 +836,69 @@ async function generateMatchesHelper(sessionPublicId: string) {
 
   // Insert participants
   if (participantsWithIds.length > 0) {
-    const { error: participantsError } = await supabase
-      .from('match_participants')
-      .insert(participantsWithIds)
+    const { data: insertedParticipants, error: participantsError } =
+      await supabase
+        .from('match_participants')
+        .insert(participantsWithIds)
+        .select()
 
     if (participantsError) {
       console.error('Error creating participants:', participantsError)
       throw new Error(
         `Failed to add players to matches: ${participantsError.message}`,
       )
+    }
+
+    // Assign bookers to each match
+    // Strategy: For each match, pick a random participant, but prefer players
+    // who are not already bookers in other matches in this session
+    if (insertedParticipants && insertedParticipants.length > 0) {
+      // Group participants by match_id
+      const participantsByMatch = new Map<number, typeof insertedParticipants>()
+      for (const participant of insertedParticipants) {
+        const existing = participantsByMatch.get(participant.match_id) || []
+        existing.push(participant)
+        participantsByMatch.set(participant.match_id, existing)
+      }
+
+      // Track which players are already assigned as bookers
+      const playersAlreadyBookers = new Set<string>()
+
+      // Process matches in order to assign bookers fairly
+      for (const matchId of participantsByMatch.keys()) {
+        const participants = participantsByMatch.get(matchId) || []
+
+        if (participants.length === 0) continue
+
+        // Shuffle participants randomly
+        const shuffled = [...participants].sort(() => Math.random() - 0.5)
+
+        // Sort so that players who are already bookers come last
+        shuffled.sort((a, b) => {
+          const aIsBooker = playersAlreadyBookers.has(a.player_id)
+          const bIsBooker = playersAlreadyBookers.has(b.player_id)
+          if (aIsBooker && !bIsBooker) return 1
+          if (!aIsBooker && bIsBooker) return -1
+          return 0
+        })
+
+        // Pick the first participant (least likely to be already a booker)
+        const selectedBooker = shuffled[0]
+
+        // Update the match with the booker_id
+        const { error: updateError } = await supabase
+          .from('matches')
+          .update({ booker_id: selectedBooker.id })
+          .eq('id', matchId)
+
+        if (updateError) {
+          console.error('Error assigning booker:', updateError)
+          // Don't fail the entire operation for booker assignment
+        } else {
+          // Track this player as a booker
+          playersAlreadyBookers.add(selectedBooker.player_id)
+        }
+      }
     }
   }
 

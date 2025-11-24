@@ -5,11 +5,15 @@ dist-ssr
 *.local
 count.txt
 .env
+.env.local
+.env.local.production
+.spec-workflow
 .nitro
 .tanstack
 .output
 .vinxi
 todos.json
+supabase/.temp
 
 # Local Netlify folder
 .netlify
