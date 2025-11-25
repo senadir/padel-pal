@@ -162,16 +162,15 @@ async function fetchSessionData(
     .eq('session_id', sessionRow.id)
 
   let levels: string[] = []
-  console.log(matches)
   if (matches && matches.length > 0) {
     levels = matches.map((match) => match.level)
   } else {
     levels = (JSON.parse(sessionRow.time_slots as string) as TimeSlot[])
       .map((slot) => slot.options.map((option) => option.level))
       .flat()
-      .filter((level, index, self) => self.indexOf(level) === index)
   }
 
+  levels = [...new Set(levels)]
   return {
     type: 'session',
     date: sessionRow.date

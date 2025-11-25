@@ -18,6 +18,7 @@ import { Route as LoginPlaytomicRouteImport } from './routes/login/playtomic'
 import { Route as LoginOtpRouteImport } from './routes/login/otp'
 import { Route as ApiWhatsappWebhookRouteImport } from './routes/api/whatsapp-webhook'
 import { Route as ApiOgRouteImport } from './routes/api/og'
+import { Route as ShareMatchIdRouteImport } from './routes/share/match.$id'
 import { Route as SessionsIdMatchIdRouteImport } from './routes/sessions/$id.$matchId'
 import { Route as ApiSyncMatchPublicMatchIdRouteImport } from './routes/api/sync-match.$publicMatchId'
 
@@ -66,6 +67,11 @@ const ApiOgRoute = ApiOgRouteImport.update({
   path: '/api/og',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ShareMatchIdRoute = ShareMatchIdRouteImport.update({
+  id: '/share/match/$id',
+  path: '/share/match/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SessionsIdMatchIdRoute = SessionsIdMatchIdRouteImport.update({
   id: '/$matchId',
   path: '/$matchId',
@@ -90,6 +96,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginIndexRoute
   '/api/sync-match/$publicMatchId': typeof ApiSyncMatchPublicMatchIdRoute
   '/sessions/$id/$matchId': typeof SessionsIdMatchIdRoute
+  '/share/match/$id': typeof ShareMatchIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -103,6 +110,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginIndexRoute
   '/api/sync-match/$publicMatchId': typeof ApiSyncMatchPublicMatchIdRoute
   '/sessions/$id/$matchId': typeof SessionsIdMatchIdRoute
+  '/share/match/$id': typeof ShareMatchIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -117,6 +125,7 @@ export interface FileRoutesById {
   '/login/': typeof LoginIndexRoute
   '/api/sync-match/$publicMatchId': typeof ApiSyncMatchPublicMatchIdRoute
   '/sessions/$id/$matchId': typeof SessionsIdMatchIdRoute
+  '/share/match/$id': typeof ShareMatchIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -132,6 +141,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/api/sync-match/$publicMatchId'
     | '/sessions/$id/$matchId'
+    | '/share/match/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -145,6 +155,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/api/sync-match/$publicMatchId'
     | '/sessions/$id/$matchId'
+    | '/share/match/$id'
   id:
     | '__root__'
     | '/'
@@ -158,6 +169,7 @@ export interface FileRouteTypes {
     | '/login/'
     | '/api/sync-match/$publicMatchId'
     | '/sessions/$id/$matchId'
+    | '/share/match/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -171,6 +183,7 @@ export interface RootRouteChildren {
   SessionsNewRoute: typeof SessionsNewRoute
   LoginIndexRoute: typeof LoginIndexRoute
   ApiSyncMatchPublicMatchIdRoute: typeof ApiSyncMatchPublicMatchIdRoute
+  ShareMatchIdRoute: typeof ShareMatchIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -238,6 +251,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiOgRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/share/match/$id': {
+      id: '/share/match/$id'
+      path: '/share/match/$id'
+      fullPath: '/share/match/$id'
+      preLoaderRoute: typeof ShareMatchIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/sessions/$id/$matchId': {
       id: '/sessions/$id/$matchId'
       path: '/$matchId'
@@ -278,6 +298,7 @@ const rootRouteChildren: RootRouteChildren = {
   SessionsNewRoute: SessionsNewRoute,
   LoginIndexRoute: LoginIndexRoute,
   ApiSyncMatchPublicMatchIdRoute: ApiSyncMatchPublicMatchIdRoute,
+  ShareMatchIdRoute: ShareMatchIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

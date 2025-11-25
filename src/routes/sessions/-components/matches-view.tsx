@@ -1,5 +1,5 @@
 import { format } from 'date-fns'
-import { MapPin, Clock, ExternalLink, PlusIcon } from 'lucide-react'
+import { MapPin, Clock, ExternalLink, PlusIcon, Share2 } from 'lucide-react'
 import type {
   Match,
   Session,
@@ -15,6 +15,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { toast } from 'sonner'
 import { cva } from 'class-variance-authority'
 import { computePlayerSyncStatus } from '@/utils/match-sync'
 
@@ -93,15 +94,53 @@ function MatchCard({ match, session }: { match: Match; session: Session }) {
       )
     : match.players.map((p) => ({ ...p, syncStatus: 'unconnected' as const }))
 
+  const handleShare = async () => {
+    const playerNames = syncedPlayers
+      .map((p) => p.name)
+      .filter(Boolean)
+      .join(', ')
+    const shareUrl = `${window.location.origin}/share/match/${match.id}`
+    const shareText = [
+      `${match.level} Padel Match`,
+      `${sessionDate} at ${startTime}`,
+      `${session.venues[0]?.name || 'TBD'}`,
+      playerNames ? `Players: ${playerNames}` : 'Join us!',
+    ].join('\n')
+
+    if (navigator.share) {
+      await navigator.share({
+        title: `${match.level} Padel Match`,
+        text: shareText,
+        url: shareUrl,
+      })
+      toast.success('Shared to other apps')
+    } else {
+      await navigator.clipboard.writeText(`${shareText}\n\n${shareUrl}`)
+      toast.success('Copied to clipboard')
+    }
+  }
+
   return (
     <Card className="overflow-hidden">
       <CardContent className="p-6 space-y-3">
         {/* Header with date and status */}
         <div className="flex items-start justify-between">
           <h3 className="text font-semibold">{sessionDate}</h3>
-          <Badge variant={session.status === 'open' ? 'default' : 'outline'}>
-            {session.status === 'open' ? 'Open' : session.status}
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-10"
+              onClick={handleShare}
+              aria-label="Share match"
+            >
+              <Share2 className="h-4 w-4" />
+            </Button>
+            <Badge variant={session.status === 'open' ? 'default' : 'outline'}>
+              {session.status === 'open' ? 'Open' : session.status}
+            </Badge>
+          </div>
         </div>
 
         <div className="flex flex-col gap-2">

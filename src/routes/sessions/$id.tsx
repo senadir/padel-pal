@@ -93,7 +93,7 @@ function RouteComponent() {
   )
 
   return (
-    <form className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6">
       <FieldSet>
         <div className="flex flex-col gap-1">
           <h1 className="text-2xl font-bold">
@@ -144,9 +144,11 @@ function RouteComponent() {
         {showMatchesView ? (
           <MatchesView session={session} matches={matches} />
         ) : (
-          <VotingView session={session} />
+          <form>
+            <VotingView session={session} />
+          </form>
         )}
       </FieldSet>
-    </form>
+    </div>
   )
 }
