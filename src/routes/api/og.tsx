@@ -6,6 +6,65 @@ import type { Database } from '@/utils/database.types'
 import type { TimeSlot } from '@/utils/types'
 import Logo from '../../../public/favicon.svg'
 import { padelOgImage } from '@/assets/padel-og-base64'
+import { env } from 'cloudflare:workers'
+
+// =============================================================================
+// R2 Cache Helpers
+// =============================================================================
+
+function generateCacheKey(data: MatchData | SessionData): string {
+  if (data.type === 'match') {
+    // Include player info in cache key since it affects the image
+    const playerHash = data.players
+      .map((p) => `${p.name || ''}-${p.avatar || ''}`)
+      .join('|')
+    return `og/match/${data.time}-${data.date}-${data.level}-${data.players.length}-${hashString(playerHash)}.png`
+  } else {
+    // For sessions, include status and match count
+    return `og/session/${data.date}-${data.status}-${data.openMatchesCount}-${data.levels.join('-')}.png`
+  }
+}
+
+function hashString(str: string): string {
+  let hash = 0
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i)
+    hash = (hash << 5) - hash + char
+    hash = hash & hash // Convert to 32bit integer
+  }
+  return Math.abs(hash).toString(36)
+}
+
+async function getCachedImage(
+  cacheKey: string,
+): Promise<Response | null> {
+  try {
+    const cached = await env.OG_IMAGES.get(cacheKey)
+    if (cached) {
+      const headers = new Headers()
+      cached.writeHttpMetadata(headers)
+      headers.set('Cache-Control', 'public, max-age=86400')
+      headers.set('X-Cache', 'HIT')
+      return new Response(cached.body, { headers })
+    }
+  } catch (error) {
+    console.error('R2 cache read error:', error)
+  }
+  return null
+}
+
+async function cacheImage(
+  cacheKey: string,
+  imageBuffer: ArrayBuffer,
+): Promise<void> {
+  try {
+    await env.OG_IMAGES.put(cacheKey, imageBuffer, {
+      httpMetadata: { contentType: 'image/png' },
+    })
+  } catch (error) {
+    console.error('R2 cache write error:', error)
+  }
+}
 
 // =============================================================================
 // Constants & Configuration
@@ -715,6 +774,15 @@ export const Route = createFileRoute('/api/og')({
           data = await fetchSessionData(id)
         }
 
+        // Check R2 cache for existing image (only for valid data)
+        if (data) {
+          const cacheKey = generateCacheKey(data)
+          const cachedResponse = await getCachedImage(cacheKey)
+          if (cachedResponse) {
+            return cachedResponse
+          }
+        }
+
         const fonts = [
           {
             name: 'Onest',
@@ -726,7 +794,7 @@ export const Route = createFileRoute('/api/og')({
           },
         ]
 
-        // Default OG image when no data
+        // Default OG image when no data (not cached since it's static)
         if (!data) {
           return new ImageResponse(<DefaultOGLayout logoSrc={logoSrc} />, {
             width: 1200,
@@ -735,7 +803,8 @@ export const Route = createFileRoute('/api/og')({
           })
         }
 
-        return new ImageResponse(
+        // Generate the image
+        const imageResponse = new ImageResponse(
           (
             <OGLayout
               data={data}
@@ -749,6 +818,20 @@ export const Route = createFileRoute('/api/og')({
             fonts,
           },
         )
+
+        // Cache the generated image in R2
+        const cacheKey = generateCacheKey(data)
+        const imageBuffer = await imageResponse.arrayBuffer()
+        await cacheImage(cacheKey, imageBuffer)
+
+        // Return a new response with the buffer (since we consumed the original)
+        return new Response(imageBuffer, {
+          headers: {
+            'Content-Type': 'image/png',
+            'Cache-Control': 'public, max-age=86400',
+            'X-Cache': 'MISS',
+          },
+        })
       },
     },
   },
