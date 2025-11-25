@@ -1,13 +1,14 @@
 import { createServerFn } from '@tanstack/react-start'
 import { getSupabaseServerClient } from './supabase'
 import type { PlaceSearchResult } from './types'
+import { withSentry } from './sentry'
 
 /**
  * Get all recently used venues
  * Returns venues ordered by most recently created (newest first)
  */
 export const getRecentVenues = createServerFn({ method: 'GET' }).handler(
-  async (): Promise<Array<PlaceSearchResult>> => {
+  withSentry(async (): Promise<Array<PlaceSearchResult>> => {
     const supabase = getSupabaseServerClient()
 
     const { data: venues, error } = await supabase
@@ -29,7 +30,7 @@ export const getRecentVenues = createServerFn({ method: 'GET' }).handler(
       googlePlaceId: venue.place_id || undefined,
       googleMapsUrl: venue.maps_url || undefined,
     }))
-  },
+  }),
 )
 
 /**
@@ -44,43 +45,45 @@ interface UpsertVenueInput {
 
 export const upsertVenue = createServerFn({ method: 'POST' })
   .inputValidator((data: UpsertVenueInput) => data)
-  .handler(async ({ data }) => {
-    const supabase = getSupabaseServerClient()
+  .handler(
+    withSentry(async ({ data }) => {
+      const supabase = getSupabaseServerClient()
 
-    // Upsert venue (insert or ignore if place_id already exists)
-    const { data: venue, error } = await supabase
-      .from('venues')
-      .upsert(
-        {
-          label: data.label,
-          maps_url: data.mapsUrl,
-          place_id: data.placeId,
-        },
-        {
-          onConflict: 'place_id',
-          ignoreDuplicates: true, // Don't error if venue already exists
-        },
-      )
-      .select('id')
-      .single()
-
-    if (error || !venue) {
-      // If ignoreDuplicates is true and venue exists, we get null data but no error
-      // In that case, fetch the existing venue
-      const { data: existing, error: fetchError } = await supabase
+      // Upsert venue (insert or ignore if place_id already exists)
+      const { data: venue, error } = await supabase
         .from('venues')
+        .upsert(
+          {
+            label: data.label,
+            maps_url: data.mapsUrl,
+            place_id: data.placeId,
+          },
+          {
+            onConflict: 'place_id',
+            ignoreDuplicates: true, // Don't error if venue already exists
+          },
+        )
         .select('id')
-        .eq('place_id', data.placeId)
         .single()
 
-      if (existing) {
-        return { id: existing.id }
+      if (error || !venue) {
+        // If ignoreDuplicates is true and venue exists, we get null data but no error
+        // In that case, fetch the existing venue
+        const { data: existing, error: fetchError } = await supabase
+          .from('venues')
+          .select('id')
+          .eq('place_id', data.placeId)
+          .single()
+
+        if (existing) {
+          return { id: existing.id }
+        }
+
+        throw new Error(
+          `Failed to upsert venue: ${error ? error.message : fetchError ? fetchError.message : 'Unknown error'}`,
+        )
       }
 
-      throw new Error(
-        `Failed to upsert venue: ${error ? error.message : fetchError ? fetchError.message : 'Unknown error'}`,
-      )
-    }
-
-    return { id: venue.id }
-  })
+      return { id: venue.id }
+    }),
+  )

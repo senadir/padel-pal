@@ -12,8 +12,8 @@ import ShortUniqueId from 'short-unique-id'
 import { format, formatISO } from 'date-fns'
 import { getSupabaseServerClient } from './supabase'
 import { upsertVenue } from './venues'
+import { withSentry } from './sentry'
 import type {
-  Level,
   Match,
   Player,
   Session,
@@ -176,7 +176,7 @@ interface RawTimeSlot {
 }
 
 export const fetchSessions = createServerFn({ method: 'GET' }).handler(
-  async () => {
+  withSentry(async () => {
     try {
       const supabase = getSupabaseServerClient()
 
@@ -240,7 +240,7 @@ export const fetchSessions = createServerFn({ method: 'GET' }).handler(
       console.error('Error in fetchSessions:', err)
       throw err
     }
-  },
+  }),
 )
 
 export const sessionsQueryOptions = () =>
@@ -251,9 +251,10 @@ export const sessionsQueryOptions = () =>
 
 export const fetchSession = createServerFn({ method: 'GET' })
   .inputValidator((d: string) => d)
-  .handler(async ({ data }): Promise<Session> => {
-    try {
-      const supabase = getSupabaseServerClient()
+  .handler(
+    withSentry(async ({ data }): Promise<Session> => {
+      try {
+        const supabase = getSupabaseServerClient()
 
       // Fetch session from Supabase using public_id
       const { data: sessionRow, error } = await supabase
@@ -369,19 +370,21 @@ export const fetchSession = createServerFn({ method: 'GET' })
       }
 
       return session
-    } catch (err) {
-      console.error('Error fetching session:', err)
-      if (err instanceof Error && err.message.includes('404')) {
-        throw notFound()
+      } catch (err) {
+        console.error('Error fetching session:', err)
+        if (err instanceof Error && err.message.includes('404')) {
+          throw notFound()
+        }
+        throw err
       }
-      throw err
-    }
-  })
+    }),
+  )
 
 export const fetchMatches = createServerFn({ method: 'GET' })
   .inputValidator((sessionId: string) => sessionId)
-  .handler(async ({ data: sessionPublicId }): Promise<Match[]> => {
-    try {
+  .handler(
+    withSentry(async ({ data: sessionPublicId }): Promise<Match[]> => {
+      try {
       const supabase = getSupabaseServerClient()
 
       // Get session ID from public_id
@@ -478,11 +481,12 @@ export const fetchMatches = createServerFn({ method: 'GET' })
       })
 
       return matches
-    } catch (err) {
-      console.error('Error in fetchMatches:', err)
-      return []
-    }
-  })
+      } catch (err) {
+        console.error('Error in fetchMatches:', err)
+        return []
+      }
+    }),
+  )
 
 export const sessionQueryOptions = (sessionId: string) =>
   queryOptions({
@@ -507,8 +511,9 @@ export const voteForOption = createServerFn({ method: 'POST' })
       }),
     ),
   )
-  .handler(async ({ data }) => {
-    const supabase = getSupabaseServerClient()
+  .handler(
+    withSentry(async ({ data }) => {
+      const supabase = getSupabaseServerClient()
 
     // Get session ID from public_id
     const { data: sessionRow, error: sessionError } = await supabase
@@ -533,13 +538,14 @@ export const voteForOption = createServerFn({ method: 'POST' })
       },
     )
 
-    if (error) {
-      console.error('Error voting:', error)
-      throw new Error(`Failed to vote: ${error.message}`)
-    }
+      if (error) {
+        console.error('Error voting:', error)
+        throw new Error(`Failed to vote: ${error.message}`)
+      }
 
-    return { success: true }
-  })
+      return { success: true }
+    }),
+  )
 
 // Remove vote for an option
 export const unvoteForOption = createServerFn({ method: 'POST' })
@@ -552,8 +558,9 @@ export const unvoteForOption = createServerFn({ method: 'POST' })
       }),
     ),
   )
-  .handler(async ({ data }) => {
-    const supabase = getSupabaseServerClient()
+  .handler(
+    withSentry(async ({ data }) => {
+      const supabase = getSupabaseServerClient()
 
     // Get session ID from public_id
     const { data: sessionRow, error: sessionError } = await supabase
@@ -574,13 +581,14 @@ export const unvoteForOption = createServerFn({ method: 'POST' })
       .eq('session_id', sessionRow.id)
       .eq('option_id', data.optionId)
 
-    if (error) {
-      console.error('Error unvoting:', error)
-      throw new Error(`Failed to remove vote: ${error.message}`)
-    }
+      if (error) {
+        console.error('Error unvoting:', error)
+        throw new Error(`Failed to remove vote: ${error.message}`)
+      }
 
-    return { success: true }
-  })
+      return { success: true }
+    }),
+  )
 
 // Join a match
 export const joinMatch = createServerFn({ method: 'POST' })
@@ -593,8 +601,9 @@ export const joinMatch = createServerFn({ method: 'POST' })
       }),
     ),
   )
-  .handler(async ({ data }) => {
-    const supabase = getSupabaseServerClient()
+  .handler(
+    withSentry(async ({ data }) => {
+      const supabase = getSupabaseServerClient()
 
     // Get match ID from public_id
     const { data: matchRow, error: matchError } = await supabase
@@ -650,15 +659,16 @@ export const joinMatch = createServerFn({ method: 'POST' })
           .update({ booker_id: bestBookerId })
           .eq('id', matchRow.id)
 
-        if (updateError) {
-          console.error('Error assigning booker:', updateError)
-          // Don't fail the join operation for booker assignment
+          if (updateError) {
+            console.error('Error assigning booker:', updateError)
+            // Don't fail the join operation for booker assignment
+          }
         }
       }
-    }
 
-    return { success: true }
-  })
+      return { success: true }
+    }),
+  )
 
 // Leave a match (unjoin)
 export const unjoinMatch = createServerFn({ method: 'POST' })
@@ -670,8 +680,9 @@ export const unjoinMatch = createServerFn({ method: 'POST' })
       }),
     ),
   )
-  .handler(async ({ data }) => {
-    const supabase = getSupabaseServerClient()
+  .handler(
+    withSentry(async ({ data }) => {
+      const supabase = getSupabaseServerClient()
 
     // Get match ID from public_id along with booker info
     const { data: matchRow, error: matchError } = await supabase
@@ -725,14 +736,15 @@ export const unjoinMatch = createServerFn({ method: 'POST' })
         .update({ booker_id: newBookerId })
         .eq('id', matchRow.id)
 
-      if (updateError) {
-        console.error('Error reassigning booker:', updateError)
-        // Don't fail the unjoin operation for booker reassignment
+        if (updateError) {
+          console.error('Error reassigning booker:', updateError)
+          // Don't fail the unjoin operation for booker reassignment
+        }
       }
-    }
 
-    return { success: true }
-  })
+      return { success: true }
+    }),
+  )
 
 // Helper function to generate matches from voting results
 async function generateMatchesHelper(sessionPublicId: string) {
@@ -918,10 +930,12 @@ async function generateMatchesHelper(sessionPublicId: string) {
 // Generate matches from voting results (hybrid approach)
 export const generateMatches = createServerFn({ method: 'POST' })
   .inputValidator(zodValidator(z.object({ sessionPublicId: z.string() })))
-  .handler(async ({ data }) => {
-    // Delegate to the helper function
-    return generateMatchesHelper(data.sessionPublicId)
-  })
+  .handler(
+    withSentry(async ({ data }) => {
+      // Delegate to the helper function
+      return generateMatchesHelper(data.sessionPublicId)
+    }),
+  )
 
 export const useVoteForSession = ({ sessionId }: { sessionId: string }) => {
   const queryClient = useQueryClient()
@@ -1268,15 +1282,16 @@ export const createSession = createServerFn({ method: 'POST' })
     ),
   )
   .handler(
-    async ({
-      data,
-    }: {
-      data: SessionForm & {
-        status?: 'draft' | 'voting' | 'open' | 'cancelled' | 'closed'
-      }
-    }): Promise<string> => {
-      try {
-        const supabase = getSupabaseServerClient()
+    withSentry(
+      async ({
+        data,
+      }: {
+        data: SessionForm & {
+          status?: 'draft' | 'voting' | 'open' | 'cancelled' | 'closed'
+        }
+      }): Promise<string> => {
+        try {
+          const supabase = getSupabaseServerClient()
 
         // Save all venues to database for future autocomplete
         for (const venue of data.venues) {
@@ -1369,12 +1384,13 @@ export const createSession = createServerFn({ method: 'POST' })
           throw new Error(`Failed to create session: ${error.message}`)
         }
 
-        return session.public_id
-      } catch (error) {
-        console.error('Error in createSession:', error)
-        throw error
-      }
-    },
+          return session.public_id
+        } catch (error) {
+          console.error('Error in createSession:', error)
+          throw error
+        }
+      },
+    ),
   )
 
 // Save session as template
@@ -1396,44 +1412,46 @@ export const saveSessionTemplate = createServerFn({ method: 'POST' })
       }),
     ),
   )
-  .handler(async ({ data }) => {
-    try {
-      const supabase = getSupabaseServerClient()
+  .handler(
+    withSentry(async ({ data }) => {
+      try {
+        const supabase = getSupabaseServerClient()
 
-      // Get current user
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
+        // Get current user
+        const {
+          data: { user },
+        } = await supabase.auth.getUser()
 
-      if (!user) {
-        throw new Error('User not authenticated')
+        if (!user) {
+          throw new Error('User not authenticated')
+        }
+
+        // Insert template
+        const { data: template, error } = await supabase
+          .from('session_templates')
+          .insert({
+            name: data.name,
+            created_by: user.id,
+            template_data: data.templateData,
+          })
+          .select()
+          .single()
+
+        if (error) {
+          throw new Error(`Failed to save template: ${error.message}`)
+        }
+
+        return { success: true, templateId: template.id }
+      } catch (error) {
+        console.error('Error in saveSessionTemplate:', error)
+        throw error
       }
-
-      // Insert template
-      const { data: template, error } = await supabase
-        .from('session_templates')
-        .insert({
-          name: data.name,
-          created_by: user.id,
-          template_data: data.templateData,
-        })
-        .select()
-        .single()
-
-      if (error) {
-        throw new Error(`Failed to save template: ${error.message}`)
-      }
-
-      return { success: true, templateId: template.id }
-    } catch (error) {
-      console.error('Error in saveSessionTemplate:', error)
-      throw error
-    }
-  })
+    }),
+  )
 
 // Fetch all templates
 export const fetchSessionTemplates = createServerFn({ method: 'GET' }).handler(
-  async () => {
+  withSentry(async () => {
     try {
       const supabase = getSupabaseServerClient()
 
@@ -1451,7 +1469,7 @@ export const fetchSessionTemplates = createServerFn({ method: 'GET' }).handler(
       console.error('Error in fetchSessionTemplates:', error)
       throw error
     }
-  },
+  }),
 )
 
 // Update session status
@@ -1464,9 +1482,10 @@ export const updateSessionStatus = createServerFn({ method: 'POST' })
       }),
     ),
   )
-  .handler(async ({ data }) => {
-    try {
-      const supabase = getSupabaseServerClient()
+  .handler(
+    withSentry(async ({ data }) => {
+      try {
+        const supabase = getSupabaseServerClient()
 
       // Get session with current status
       const { data: sessionRow, error: sessionError } = await supabase
@@ -1518,19 +1537,21 @@ export const updateSessionStatus = createServerFn({ method: 'POST' })
         }
       }
 
-      return { success: true }
-    } catch (error) {
-      console.error('Error in updateSessionStatus:', error)
-      throw error
-    }
-  })
+        return { success: true }
+      } catch (error) {
+        console.error('Error in updateSessionStatus:', error)
+        throw error
+      }
+    }),
+  )
 
 // Delete session
 export const deleteSession = createServerFn({ method: 'POST' })
   .inputValidator(zodValidator(z.object({ sessionPublicId: z.string() })))
-  .handler(async ({ data }) => {
-    try {
-      const supabase = getSupabaseServerClient()
+  .handler(
+    withSentry(async ({ data }) => {
+      try {
+        const supabase = getSupabaseServerClient()
 
       // Get session ID from public_id
       const { data: sessionRow, error: sessionError } = await supabase
@@ -1549,13 +1570,14 @@ export const deleteSession = createServerFn({ method: 'POST' })
         .delete()
         .eq('id', sessionRow.id)
 
-      if (deleteError) {
-        throw new Error(`Failed to delete session: ${deleteError.message}`)
-      }
+        if (deleteError) {
+          throw new Error(`Failed to delete session: ${deleteError.message}`)
+        }
 
-      return { success: true }
-    } catch (error) {
-      console.error('Error in deleteSession:', error)
-      throw error
-    }
-  })
+        return { success: true }
+      } catch (error) {
+        console.error('Error in deleteSession:', error)
+        throw error
+      }
+    }),
+  )
