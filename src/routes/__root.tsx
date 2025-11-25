@@ -70,7 +70,8 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
       },
       {
         property: 'og:image',
-        content: '/api/og?title=Padel%20Pal&subtitle=Organize%20your%20padel%20sessions',
+        content:
+          '/api/og?title=Padel%20Pal&subtitle=Organize%20your%20padel%20sessions',
       },
       {
         property: 'og:image:width',
@@ -96,7 +97,8 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
       },
       {
         name: 'twitter:image',
-        content: '/api/og?title=Padel%20Pal&subtitle=Organize%20your%20padel%20sessions',
+        content:
+          '/api/og?title=Padel%20Pal&subtitle=Organize%20your%20padel%20sessions',
       },
     ],
     links: [
@@ -159,15 +161,17 @@ function RootComponent() {
           </div>
         </div>
         <Toaster />
-        <TanStackDevtools
-          plugins={[
-            TanStackQueryDevtools,
-            {
-              name: 'TanStack Router',
-              render: <TanStackRouterDevtoolsPanel />,
-            },
-          ]}
-        />
+        {import.meta.env.DEV && (
+          <TanStackDevtools
+            plugins={[
+              TanStackQueryDevtools,
+              {
+                name: 'TanStack Router',
+                render: <TanStackRouterDevtoolsPanel />,
+              },
+            ]}
+          />
+        )}
       </TooltipProvider>
     </ThemeProvider>
   )
