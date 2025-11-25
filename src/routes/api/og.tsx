@@ -7,6 +7,33 @@ import type { TimeSlot } from '@/utils/types'
 import Logo from '../../../public/favicon.svg'
 import { padelOgImage } from '@/assets/padel-og-base64'
 import { env } from 'cloudflare:workers'
+import UPNG from 'upng-js'
+import jpeg from 'jpeg-js'
+
+// =============================================================================
+// Image Compression
+// =============================================================================
+
+async function compressToJpeg(
+  pngBuffer: ArrayBuffer,
+  quality = 80,
+): Promise<Buffer> {
+  // Decode PNG using upng-js
+  const png = UPNG.decode(pngBuffer)
+  const rgba = UPNG.toRGBA8(png)[0] // Get first frame as RGBA
+
+  // Encode as JPEG with quality setting
+  const jpegData = jpeg.encode(
+    {
+      data: Buffer.from(rgba),
+      width: png.width,
+      height: png.height,
+    },
+    quality,
+  )
+
+  return jpegData.data
+}
 
 // =============================================================================
 // R2 Cache Helpers
@@ -18,10 +45,10 @@ function generateCacheKey(data: MatchData | SessionData): string {
     const playerHash = data.players
       .map((p) => `${p.name || ''}-${p.avatar || ''}`)
       .join('|')
-    return `og/match/${data.time}-${data.date}-${data.level}-${data.players.length}-${hashString(playerHash)}.png`
+    return `og/match/${data.time}-${data.date}-${data.level}-${data.players.length}-${hashString(playerHash)}.jpg`
   } else {
     // For sessions, include status and match count
-    return `og/session/${data.date}-${data.status}-${data.openMatchesCount}-${data.levels.join('-')}.png`
+    return `og/session/${data.date}-${data.status}-${data.openMatchesCount}-${data.levels.join('-')}.jpg`
   }
 }
 
@@ -35,9 +62,7 @@ function hashString(str: string): string {
   return Math.abs(hash).toString(36)
 }
 
-async function getCachedImage(
-  cacheKey: string,
-): Promise<Response | null> {
+async function getCachedImage(cacheKey: string): Promise<Response | null> {
   try {
     const cached = await env.OG_IMAGES.get(cacheKey)
     if (cached) {
@@ -53,13 +78,10 @@ async function getCachedImage(
   return null
 }
 
-async function cacheImage(
-  cacheKey: string,
-  imageBuffer: ArrayBuffer,
-): Promise<void> {
+async function cacheImage(cacheKey: string, imageBuffer: Buffer): Promise<void> {
   try {
     await env.OG_IMAGES.put(cacheKey, imageBuffer, {
-      httpMetadata: { contentType: 'image/png' },
+      httpMetadata: { contentType: 'image/jpeg' },
     })
   } catch (error) {
     console.error('R2 cache write error:', error)
@@ -803,7 +825,7 @@ export const Route = createFileRoute('/api/og')({
           })
         }
 
-        // Generate the image
+        // Generate the image as PNG
         const imageResponse = new ImageResponse(
           (
             <OGLayout
@@ -819,15 +841,18 @@ export const Route = createFileRoute('/api/og')({
           },
         )
 
-        // Cache the generated image in R2
-        const cacheKey = generateCacheKey(data)
-        const imageBuffer = await imageResponse.arrayBuffer()
-        await cacheImage(cacheKey, imageBuffer)
+        // Convert PNG to compressed JPEG (WhatsApp limit is 300KB)
+        const pngBuffer = await imageResponse.arrayBuffer()
+        const jpegBuffer = await compressToJpeg(pngBuffer, 75)
 
-        // Return a new response with the buffer (since we consumed the original)
-        return new Response(imageBuffer, {
+        // Cache the compressed image in R2
+        const cacheKey = generateCacheKey(data)
+        await cacheImage(cacheKey, jpegBuffer)
+
+        // Return the compressed JPEG (convert Buffer to Uint8Array for Response)
+        return new Response(new Uint8Array(jpegBuffer), {
           headers: {
-            'Content-Type': 'image/png',
+            'Content-Type': 'image/jpeg',
             'Cache-Control': 'public, max-age=86400',
             'X-Cache': 'MISS',
           },
