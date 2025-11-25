@@ -6,4 +6,7 @@
         "nodejs_compat"
     ],
     "main": "@tanstack/react-start/server-entry",
+    "placement": {
+        "mode": "smart"
+    }
 }
