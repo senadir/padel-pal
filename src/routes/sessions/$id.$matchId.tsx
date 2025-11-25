@@ -49,16 +49,34 @@ export const Route = createFileRoute('/sessions/$id/$matchId')({
   },
   head: ({ loaderData }) => {
     if (!loaderData?.match || !loaderData?.session) {
-      return { meta: [{ title: 'Match | Padel Pal' }] }
+      return {
+        meta: [
+          { title: 'Match | Padel Pal' },
+          { property: 'og:title', content: 'Match | Padel Pal' },
+          { property: 'og:description', content: 'View match details and players.' },
+          { property: 'og:image', content: '/api/og' },
+          { name: 'twitter:title', content: 'Match | Padel Pal' },
+          { name: 'twitter:description', content: 'View match details and players.' },
+          { name: 'twitter:image', content: '/api/og' },
+        ],
+      }
     }
     const { match, session } = loaderData
     const time = format(match.slot.range[0], 'HH:mm')
     const date = format(session.date, 'MMM d')
+    const title = `${match.level} ${time} - ${date} | Padel Pal`
+    const description = `${match.level} match at ${time} on ${format(session.date, 'EEEE, MMMM d')}`
+    const ogImage = `/api/og?type=match&id=${match.id}`
+
     return {
       meta: [
-        {
-          title: `${match.level} ${time} - ${date} | Padel Pal`,
-        },
+        { title },
+        { property: 'og:title', content: title },
+        { property: 'og:description', content: description },
+        { property: 'og:image', content: ogImage },
+        { name: 'twitter:title', content: title },
+        { name: 'twitter:description', content: description },
+        { name: 'twitter:image', content: ogImage },
       ],
     }
   },

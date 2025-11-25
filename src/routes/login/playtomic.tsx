@@ -16,6 +16,30 @@ export const Route = createFileRoute('/login/playtomic')({
       {
         title: 'Link Playtomic | Padel Pal',
       },
+      {
+        property: 'og:title',
+        content: 'Link Playtomic | Padel Pal',
+      },
+      {
+        property: 'og:description',
+        content: 'Connect your Playtomic profile to complete your setup.',
+      },
+      {
+        property: 'og:image',
+        content: '/api/og?title=Link%20Playtomic&subtitle=Connect%20your%20profile&type=login',
+      },
+      {
+        name: 'twitter:title',
+        content: 'Link Playtomic | Padel Pal',
+      },
+      {
+        name: 'twitter:description',
+        content: 'Connect your Playtomic profile to complete your setup.',
+      },
+      {
+        name: 'twitter:image',
+        content: '/api/og?title=Link%20Playtomic&subtitle=Connect%20your%20profile&type=login',
+      },
     ],
   }),
   component: RouteComponent,

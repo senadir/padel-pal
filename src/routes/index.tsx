@@ -27,6 +27,30 @@ export const Route = createFileRoute('/')({
       {
         title: 'Open Sessions | Padel Pal',
       },
+      {
+        property: 'og:title',
+        content: 'Open Sessions | Padel Pal',
+      },
+      {
+        property: 'og:description',
+        content: 'Browse and join open padel sessions near you.',
+      },
+      {
+        property: 'og:image',
+        content: '/api/og?title=Open%20Sessions&subtitle=Browse%20and%20join%20padel%20sessions&type=session',
+      },
+      {
+        name: 'twitter:title',
+        content: 'Open Sessions | Padel Pal',
+      },
+      {
+        name: 'twitter:description',
+        content: 'Browse and join open padel sessions near you.',
+      },
+      {
+        name: 'twitter:image',
+        content: '/api/og?title=Open%20Sessions&subtitle=Browse%20and%20join%20padel%20sessions&type=session',
+      },
     ],
   }),
   beforeLoad: ({ context, location }) => {

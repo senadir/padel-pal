@@ -104,6 +104,30 @@ export const Route = createFileRoute('/sessions/new')({
       {
         title: 'Create Session | Padel Pal',
       },
+      {
+        property: 'og:title',
+        content: 'Create Session | Padel Pal',
+      },
+      {
+        property: 'og:description',
+        content: 'Create a new padel session and invite players to vote.',
+      },
+      {
+        property: 'og:image',
+        content: '/api/og?title=Create%20Session&subtitle=Organize%20a%20new%20padel%20session&type=session',
+      },
+      {
+        name: 'twitter:title',
+        content: 'Create Session | Padel Pal',
+      },
+      {
+        name: 'twitter:description',
+        content: 'Create a new padel session and invite players to vote.',
+      },
+      {
+        name: 'twitter:image',
+        content: '/api/og?title=Create%20Session&subtitle=Organize%20a%20new%20padel%20session&type=session',
+      },
     ],
   }),
 })

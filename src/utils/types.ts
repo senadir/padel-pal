@@ -9,7 +9,7 @@ export type Level = Database['public']['Enums']['Levels']
 export type Option = {
   id: string
   slot: { id: string; range: [Date, Date] }
-  level: Level
+  level: string
   players: Array<Player & { votedAt: Date }>
 }
 
@@ -80,10 +80,21 @@ export type SessionForm = {
   votingClosesAt?: Date
 }
 
+export interface TimeSlot {
+  id: string
+  range: [Date, Date]
+  options: TimeSlotOption[]
+}
+export interface TimeSlotOption {
+  id: string
+  slot: { id: string; range: [Date, Date] }
+  level: string
+  players: Array<Player & { votedAt: Date }>
+}
 export interface Session extends Omit<SessionForm, 'timeBlocks'> {
   id: string
   status?: SessionStatus
-  timeSlots: Array<{ id: string; range: [Date, Date]; options: Array<Option> }>
+  timeSlots: TimeSlot[]
 }
 
 export interface PlaytomicProfile {

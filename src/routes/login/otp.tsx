@@ -8,6 +8,30 @@ export const Route = createFileRoute('/login/otp')({
       {
         title: 'Verify OTP | Padel Pal',
       },
+      {
+        property: 'og:title',
+        content: 'Verify OTP | Padel Pal',
+      },
+      {
+        property: 'og:description',
+        content: 'Enter your verification code to complete sign in.',
+      },
+      {
+        property: 'og:image',
+        content: '/api/og?title=Verify%20OTP&subtitle=Complete%20your%20sign%20in&type=login',
+      },
+      {
+        name: 'twitter:title',
+        content: 'Verify OTP | Padel Pal',
+      },
+      {
+        name: 'twitter:description',
+        content: 'Enter your verification code to complete sign in.',
+      },
+      {
+        name: 'twitter:image',
+        content: '/api/og?title=Verify%20OTP&subtitle=Complete%20your%20sign%20in&type=login',
+      },
     ],
   }),
   component: RouteComponent,

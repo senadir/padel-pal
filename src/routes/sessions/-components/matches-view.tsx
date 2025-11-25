@@ -132,10 +132,9 @@ function MatchCard({ match, session }: { match: Match; session: Session }) {
         {/* Player Avatars */}
         <div className="flex gap-2">
           {syncedPlayers.map((player) => (
-            <Tooltip>
+            <Tooltip key={player.id}>
               <TooltipTrigger asChild>
                 <Avatar
-                  key={player.id}
                   className={playerAvatarVariants({
                     syncStatus: player.syncStatus,
                   })}

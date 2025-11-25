@@ -8,6 +8,30 @@ export const Route = createFileRoute('/login/')({
       {
         title: 'Login | Padel Pal',
       },
+      {
+        property: 'og:title',
+        content: 'Login | Padel Pal',
+      },
+      {
+        property: 'og:description',
+        content: 'Sign in to your Padel Pal account to manage sessions and matches.',
+      },
+      {
+        property: 'og:image',
+        content: '/api/og?title=Login&subtitle=Sign%20in%20to%20your%20account&type=login',
+      },
+      {
+        name: 'twitter:title',
+        content: 'Login | Padel Pal',
+      },
+      {
+        name: 'twitter:description',
+        content: 'Sign in to your Padel Pal account to manage sessions and matches.',
+      },
+      {
+        name: 'twitter:image',
+        content: '/api/og?title=Login&subtitle=Sign%20in%20to%20your%20account&type=login',
+      },
     ],
   }),
   component: RouteComponent,

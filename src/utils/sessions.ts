@@ -12,7 +12,15 @@ import ShortUniqueId from 'short-unique-id'
 import { format, formatISO } from 'date-fns'
 import { getSupabaseServerClient } from './supabase'
 import { upsertVenue } from './venues'
-import type { Match, Player, Session, SessionForm, SessionVenue } from './types'
+import type {
+  Level,
+  Match,
+  Player,
+  Session,
+  SessionForm,
+  SessionVenue,
+  TimeSlot,
+} from './types'
 
 // Types for match generation function
 interface VoteInput {
@@ -434,15 +442,17 @@ export const fetchMatches = createServerFn({ method: 'GET' })
               court_name: match.playtomic_matches.court_name,
               start_time: match.playtomic_matches.start_time,
               end_time: match.playtomic_matches.end_time,
-              playtomic_players: match.playtomic_matches.playtomic_players as any,
+              playtomic_players: match.playtomic_matches
+                .playtomic_players as any,
               match_status: match.playtomic_matches.match_status as
                 | 'scheduled'
                 | 'played'
                 | 'cancelled'
                 | null,
-              score: match.playtomic_matches.score as
-                | { team1: number; team2: number }
-                | null,
+              score: match.playtomic_matches.score as {
+                team1: number
+                team2: number
+              } | null,
               last_synced_at: match.playtomic_matches.last_synced_at,
               created_at: match.playtomic_matches.created_at,
               updated_at: match.playtomic_matches.updated_at,
@@ -1308,7 +1318,7 @@ export const createSession = createServerFn({ method: 'POST' })
         })
 
         // Build time slots with options
-        const timeSlots = Array.from(allTimeSlotsMap.values()).map(
+        const timeSlots: TimeSlot[] = Array.from(allTimeSlotsMap.values()).map(
           (timeSlot) => {
             // For each time slot, find which levels have it
             const options = data.levels

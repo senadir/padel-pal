@@ -45,6 +45,59 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
       {
         title: 'Padel Pal',
       },
+      {
+        name: 'description',
+        content:
+          'Organize padel sessions, vote for time slots, and find matches with your friends.',
+      },
+      // Open Graph
+      {
+        property: 'og:site_name',
+        content: 'Padel Pal',
+      },
+      {
+        property: 'og:type',
+        content: 'website',
+      },
+      {
+        property: 'og:title',
+        content: 'Padel Pal',
+      },
+      {
+        property: 'og:description',
+        content:
+          'Organize padel sessions, vote for time slots, and find matches with your friends.',
+      },
+      {
+        property: 'og:image',
+        content: '/api/og?title=Padel%20Pal&subtitle=Organize%20your%20padel%20sessions',
+      },
+      {
+        property: 'og:image:width',
+        content: '1200',
+      },
+      {
+        property: 'og:image:height',
+        content: '630',
+      },
+      // Twitter
+      {
+        name: 'twitter:card',
+        content: 'summary_large_image',
+      },
+      {
+        name: 'twitter:title',
+        content: 'Padel Pal',
+      },
+      {
+        name: 'twitter:description',
+        content:
+          'Organize padel sessions, vote for time slots, and find matches with your friends.',
+      },
+      {
+        name: 'twitter:image',
+        content: '/api/og?title=Padel%20Pal&subtitle=Organize%20your%20padel%20sessions',
+      },
     ],
     links: [
       {

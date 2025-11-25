@@ -46,15 +46,30 @@ export const Route = createFileRoute('/sessions/$id')({
       matches,
     }
   },
-  head: ({ loaderData }) => ({
-    meta: [
-      {
-        title: loaderData?.session
-          ? `${format(loaderData.session.date, 'EEEE, MMM d')} | Padel Pal`
-          : 'Session | Padel Pal',
-      },
-    ],
-  }),
+  head: ({ loaderData }) => {
+    const session = loaderData?.session
+    const title = session
+      ? `${format(session.date, 'EEEE, MMM d')} | Padel Pal`
+      : 'Session | Padel Pal'
+    const description = session
+      ? `Padel session at ${session.venues[0]?.name || 'TBD'} on ${format(session.date, 'EEEE, MMMM d')}`
+      : 'View and join this padel session.'
+    const ogImage = session
+      ? `/api/og?type=session&id=${session.id}`
+      : '/api/og'
+
+    return {
+      meta: [
+        { title },
+        { property: 'og:title', content: title },
+        { property: 'og:description', content: description },
+        { property: 'og:image', content: ogImage },
+        { name: 'twitter:title', content: title },
+        { name: 'twitter:description', content: description },
+        { name: 'twitter:image', content: ogImage },
+      ],
+    }
+  },
   validateSearch: z.object({
     slot: z.string().optional(),
     matchId: z.string().optional(),
