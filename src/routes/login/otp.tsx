@@ -3,6 +3,13 @@ import { z } from 'zod'
 import { OTPForm } from '@/components/otp-form'
 
 export const Route = createFileRoute('/login/otp')({
+  head: () => ({
+    meta: [
+      {
+        title: 'Verify OTP | Padel Pal',
+      },
+    ],
+  }),
   component: RouteComponent,
   // CHANGE: Added redirect parameter to support return-to-origin flow
   validateSearch: z.object({

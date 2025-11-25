@@ -10,13 +10,6 @@ import { VotingView } from './-components/voting-view'
 
 export const Route = createFileRoute('/sessions/$id')({
   component: RouteComponent,
-  head: () => ({
-    meta: [
-      {
-        title: 'Vote for session',
-      },
-    ],
-  }),
   beforeLoad: async ({ params: { id }, context }) => {
     const { authData } = context
 
@@ -53,6 +46,15 @@ export const Route = createFileRoute('/sessions/$id')({
       matches,
     }
   },
+  head: ({ loaderData }) => ({
+    meta: [
+      {
+        title: loaderData?.session
+          ? `${format(loaderData.session.date, 'EEEE, MMM d')} | Padel Pal`
+          : 'Session | Padel Pal',
+      },
+    ],
+  }),
   validateSearch: z.object({
     slot: z.string().optional(),
     matchId: z.string().optional(),
@@ -71,7 +73,9 @@ function RouteComponent() {
   const { data: matches } = useSuspenseQuery(matchQueryOptions(id))
 
   // Determine which view to show based on session status
-  const showMatchesView = ['open', 'closed', 'cancelled'].includes(session.status || '')
+  const showMatchesView = ['open', 'closed', 'cancelled'].includes(
+    session.status || '',
+  )
 
   return (
     <form className="flex flex-col gap-6">
@@ -83,11 +87,11 @@ function RouteComponent() {
           <FieldLegend className="flex flex-col gap-2">
             <div>
               <a
-                to={session.venues[0].location}
+                href={session.venues[0].location}
                 target="_blank"
-                className="text-sm text-muted-foreground"
+                className="text-sm text-muted-foreground underline"
               >
-                <span className="underline">{session.venues[0].name}</span>
+                {session.venues[0].name}
               </a>
               {session.venues.length === 2 && (
                 <span className="text-muted-foreground text-sm">

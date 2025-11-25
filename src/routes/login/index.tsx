@@ -3,6 +3,13 @@ import { z } from 'zod'
 import { LoginForm } from '@/components/login-form'
 
 export const Route = createFileRoute('/login/')({
+  head: () => ({
+    meta: [
+      {
+        title: 'Login | Padel Pal',
+      },
+    ],
+  }),
   component: RouteComponent,
   // CHANGE: Added redirect parameter to support return-to-origin flow
   // When users try to vote/join while logged out, they're redirected here with

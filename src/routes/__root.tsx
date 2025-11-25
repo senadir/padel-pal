@@ -43,10 +43,15 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
           'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no',
       },
       {
-        title: 'TanStack Start Starter',
+        title: 'Padel Pal',
       },
     ],
     links: [
+      {
+        rel: 'icon',
+        type: 'image/svg+xml',
+        href: '/favicon.svg',
+      },
       {
         rel: 'stylesheet',
         href: appCss,
@@ -62,7 +67,7 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
       },
       {
         rel: 'stylesheet',
-        href: 'https://fonts.googleapis.com/css2?family=Onest:wght@100..900&display=swap',
+        href: 'https://fonts.googleapis.com/css2?family=Onest:wght@100..900&display=swap&family=Stack+Sans+Notch:wght@600&text=PadelPal',
       },
     ],
   }),

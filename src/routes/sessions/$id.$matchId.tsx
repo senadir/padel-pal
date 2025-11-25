@@ -5,6 +5,7 @@ import { ExternalLink, PlusIcon, EllipsisVertical } from 'lucide-react'
 import { useState } from 'react'
 import type { Match, Player } from '@/utils/types'
 import { matchQueryOptions } from '@/utils/sessions'
+import { sessionQueryOptions } from './$id'
 import { useAuth } from '@/contexts/auth'
 import {
   DrawerDialog,
@@ -36,6 +37,31 @@ export const Route = createFileRoute('/sessions/$id/$matchId')({
   pendingComponent: MatchModalPendingComponent,
   pendingMs: 0,
   pendingMinMs: 2000,
+  loader: async ({ params: { id, matchId }, context }) => {
+    const session = await context.queryClient.ensureQueryData(
+      sessionQueryOptions(id),
+    )
+    const matches = await context.queryClient.ensureQueryData(
+      matchQueryOptions(id),
+    )
+    const match = matches.find((m) => m.id === matchId)
+    return { session, match, matches }
+  },
+  head: ({ loaderData }) => {
+    if (!loaderData?.match || !loaderData?.session) {
+      return { meta: [{ title: 'Match | Padel Pal' }] }
+    }
+    const { match, session } = loaderData
+    const time = format(match.slot.range[0], 'HH:mm')
+    const date = format(session.date, 'MMM d')
+    return {
+      meta: [
+        {
+          title: `${match.level} ${time} - ${date} | Padel Pal`,
+        },
+      ],
+    }
+  },
 })
 
 function MatchModalPendingComponent() {

@@ -11,6 +11,13 @@ import {
 } from '@/utils/playtomic'
 
 export const Route = createFileRoute('/login/playtomic')({
+  head: () => ({
+    meta: [
+      {
+        title: 'Link Playtomic | Padel Pal',
+      },
+    ],
+  }),
   component: RouteComponent,
   validateSearch: z.object({
     email: z.string().optional(),

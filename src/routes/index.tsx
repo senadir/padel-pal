@@ -22,6 +22,13 @@ import { sessionsQueryOptions } from '@/utils/sessions'
 import { useIsOrganizer } from '@/contexts/auth'
 
 export const Route = createFileRoute('/')({
+  head: () => ({
+    meta: [
+      {
+        title: 'Open Sessions | Padel Pal',
+      },
+    ],
+  }),
   beforeLoad: ({ context, location }) => {
     const { authData } = context
 

@@ -102,7 +102,7 @@ export const Route = createFileRoute('/sessions/new')({
   head: () => ({
     meta: [
       {
-        title: 'Create a new session',
+        title: 'Create Session | Padel Pal',
       },
     ],
   }),

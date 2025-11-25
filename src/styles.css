@@ -63,6 +63,7 @@ code {
   --sidebar-border: oklch(0.929 0.013 255.508);
   --sidebar-ring: oklch(0.929 0.013 255.508);
   --font-sans: Onest, sans-serif;
+  --font-logo: 'Stack Sans Notch', sans-serif;
   --shadow-2xs: 0 1px 0 0 oklch(0.554 0.041 257.417 / 0.05);
   --shadow-xs: 0 1px 2px 0 oklch(0.554 0.041 257.417 / 0.05);
   --shadow-2xl: 0 25px 50px -12px oklch(0.554 0.041 257.417 / 0.15);
@@ -142,6 +143,7 @@ code {
   --header-height: calc(var(--spacing) * 14);
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
+  --font-logo: var(--font-logo);
   --shadow-2xs: var(--shadow-2xs);
   --shadow-xs: var(--shadow-xs);
   --shadow-sm: var(--shadow-sm);
