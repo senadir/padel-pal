@@ -5,6 +5,7 @@ import { format, formatDistanceToNow } from 'date-fns'
 import type { Database } from '@/utils/database.types'
 import type { TimeSlot } from '@/utils/types'
 import Logo from '../../../public/favicon.svg'
+import { padelOgImage } from '@/assets/padel-og-base64'
 
 // =============================================================================
 // Constants & Configuration
@@ -734,15 +735,12 @@ export const Route = createFileRoute('/api/og')({
           })
         }
 
-        // Build the padel image URL
-        const padelImageUrl = `${url.origin}/padel.jpg`
-
         return new ImageResponse(
           (
             <OGLayout
               data={data}
               logoSrc={logoSrc}
-              padelImageUrl={padelImageUrl}
+              padelImageUrl={padelOgImage}
             />
           ),
           {
