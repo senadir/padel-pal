@@ -7,7 +7,7 @@ import {
   useRouter,
 } from '@tanstack/react-router'
 import { addMinutes, format, isAfter } from 'date-fns'
-import { ChevronDown, ChevronsUpDown, Loader2 } from 'lucide-react'
+import { ChevronDown, ChevronsUpDown, Loader2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { useState } from 'react'
 import type { SessionForm } from '@/utils/types'
@@ -47,8 +47,14 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { createSession, createSessionValidator } from '@/utils/sessions'
 
 const defaultSession: SessionForm = {
-  venueName: '',
-  venueLocation: '',
+  venues: [
+    {
+      name: '',
+      location: '',
+      placeId: undefined,
+      isPrimary: true,
+    },
+  ],
   date: (() => {
     const date = new Date()
     date.setDate(date.getDate() + 7)
@@ -202,32 +208,80 @@ function NewSession() {
             Fill in the form below to create a new session
           </FieldLegend>
         </div>
-        <form.Subscribe
-          selector={(state) => ({
-            venueName: state.values.venueName,
-            venueLocation: state.values.venueLocation,
-          })}
-        >
-          {({ venueName, venueLocation }) => (
+        <form.Subscribe selector={(state) => ({ venues: state.values.venues })}>
+          {({ venues }) => (
             <Field>
-              <FieldLabel htmlFor="venue">Venue</FieldLabel>
-              <PlaceSearchCombobox
-                value={
-                  venueName
-                    ? { name: venueName, location: venueLocation }
-                    : undefined
-                }
-                onSelect={(place) => {
-                  // Update all venue fields in form state
-                  form.setFieldValue('venueName', place.name)
-                  form.setFieldValue('venueLocation', place.location)
-                  form.setFieldValue('venuePlaceId', place.placeId)
-                }}
-                placeholder="Search for a padel venue..."
-              />
+              <FieldLabel htmlFor="venue">Venues</FieldLabel>
               <FieldDescription>
-                Search for a venue or select from previously used locations.
+                Add the session venue and any additional venues needed.
               </FieldDescription>
+              <div className="flex flex-col gap-3">
+                {venues.map((venue, index) => (
+                  <div key={index} className="flex gap-2 items-start relative">
+                    <div className="flex-1">
+                      <PlaceSearchCombobox
+                        value={
+                          venue.name
+                            ? { name: venue.name, location: venue.location }
+                            : undefined
+                        }
+                        onSelect={(place) => {
+                          form.setFieldValue(
+                            `venues[${index}].name`,
+                            place.name,
+                          )
+                          form.setFieldValue(
+                            `venues[${index}].location`,
+                            place.location,
+                          )
+                          form.setFieldValue(
+                            `venues[${index}].placeId`,
+                            place.placeId,
+                          )
+                        }}
+                        placeholder={
+                          index === 0
+                            ? 'Search for a venue...'
+                            : 'Search for additional venue...'
+                        }
+                      />
+                    </div>
+                    {index > 0 && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          const newVenues = venues.filter((_, i) => i !== index)
+                          form.setFieldValue('venues', newVenues)
+                        }}
+                        className="absolute right-0 h-10 w-10"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  form.setFieldValue('venues', [
+                    ...venues,
+                    {
+                      name: '',
+                      location: '',
+                      placeId: undefined,
+                      isPrimary: false,
+                    },
+                  ])
+                }}
+                className="!w-fit ps-0 text-muted-foreground hover:bg-transparent dark:hover:bg-transparent -top-2 relative"
+              >
+                + Add additional venue
+              </Button>
             </Field>
           )}
         </form.Subscribe>
@@ -288,7 +342,7 @@ function NewSession() {
                   size="lg"
                   value={field.state.value}
                   onValueChange={(value) => {
-                    if (value) {
+                    if (value && (value === '60' || value === '90')) {
                       field.handleChange(value)
                       // Clear up selected timeSlots for all levels when this happens
                       const currentLevels = field.form.getFieldValue('levels')

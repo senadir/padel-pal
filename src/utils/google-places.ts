@@ -3,16 +3,6 @@ import type { GooglePlacePrediction, GooglePlaceDetails } from './types'
 // Google Places API request types
 interface GooglePlacesAutocompleteRequest {
   input: string
-  includedPrimaryTypes: string[]
-  locationBias?: {
-    circle: {
-      center: {
-        latitude: number
-        longitude: number
-      }
-      radius: number
-    }
-  }
 }
 
 // Google Places API response types
@@ -59,7 +49,6 @@ function getApiKey(): string {
  */
 export async function searchGooglePlaces(
   query: string,
-  location?: { lat: number; lng: number },
 ): Promise<GooglePlacePrediction[]> {
   if (!query || query.length < 3) {
     return []
@@ -71,20 +60,6 @@ export async function searchGooglePlaces(
 
     const requestBody: GooglePlacesAutocompleteRequest = {
       input: query,
-      includedPrimaryTypes: ['gym', 'sports_complex', 'sports_club'],
-    }
-
-    // Add location bias if provided
-    if (location) {
-      requestBody.locationBias = {
-        circle: {
-          center: {
-            latitude: location.lat,
-            longitude: location.lng,
-          },
-          radius: 50000, // 50km
-        },
-      }
     }
 
     const response = await fetch(url, {
@@ -102,8 +77,7 @@ export async function searchGooglePlaces(
       throw new Error(`Google Places API error: ${response.status}`)
     }
 
-    const data =
-      (await response.json()) as GooglePlacesAutocompleteResponse
+    const data = (await response.json()) as GooglePlacesAutocompleteResponse
 
     // Transform to our format
     const results: GooglePlacePrediction[] = (data.suggestions || [])

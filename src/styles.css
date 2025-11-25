@@ -31,7 +31,7 @@ code {
 
 :root {
   --radius: 0.65rem;
-  --background: oklch(1 0 0);
+  --background: oklch(98.51% 0.000 0);
   --foreground: oklch(0.282 0.087 267.935);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.282 0.087 267.935);
@@ -155,6 +155,7 @@ code {
   * {
     @apply border-border outline-ring/50;
   }
+
   body {
     @apply bg-background text-foreground;
   }

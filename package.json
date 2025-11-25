@@ -8,7 +8,8 @@
     "preview": "vite preview",
     "deploy": "wrangler deploy",
     "cf-typegen": "wrangler types",
-    "postinstall": "npm run cf-typegen"
+    "postinstall": "npm run cf-typegen",
+    "db-types": "supabase gen types typescript --project-id 'zsucxyqkpcovfejgjcxp' --schema public > src/utils/database.types.ts"
   },
   "dependencies": {
     "@ariakit/react": "^0.4.19",
@@ -30,6 +31,7 @@
     "@radix-ui/react-switch": "^1.2.6",
     "@radix-ui/react-toggle": "^1.1.10",
     "@radix-ui/react-toggle-group": "^1.1.11",
+    "@radix-ui/react-tooltip": "^1.2.8",
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.75.1",
     "@tailwindcss/vite": "^4.1.15",

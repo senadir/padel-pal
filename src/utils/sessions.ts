@@ -12,7 +12,146 @@ import ShortUniqueId from 'short-unique-id'
 import { format, formatISO } from 'date-fns'
 import { getSupabaseServerClient } from './supabase'
 import { upsertVenue } from './venues'
-import type { Match, Player, Session, SessionForm } from './types'
+import type { Match, Player, Session, SessionForm, SessionVenue } from './types'
+
+// Types for match generation function
+interface VoteInput {
+  optionId: string
+  playerId: string
+}
+
+interface TimeSlotOption {
+  id: string // option ID
+  timeSlotId: string
+  level: string
+  startTime: Date
+  endTime: Date
+}
+
+interface GeneratedMatch {
+  optionId: string
+  timeSlotId: string
+  level: string
+  startTime: Date
+  endTime: Date
+  maxPlayers: number
+  playerIds: string[]
+}
+
+/**
+ * Helper function to select the best booker for a match.
+ * Prioritizes players who are not already bookers in other matches in the session.
+ */
+async function selectBestBooker(
+  supabase: ReturnType<typeof getSupabaseServerClient>,
+  matchId: number,
+  sessionId: number,
+): Promise<number | null> {
+  // Get all participants of this match
+  const { data: participants, error: participantsError } = await supabase
+    .from('match_participants')
+    .select('id, player_id')
+    .eq('match_id', matchId)
+
+  if (participantsError || !participants || participants.length === 0) {
+    return null
+  }
+
+  // Get player IDs who are already bookers in other matches
+  const playersAlreadyBookers = new Set<string>()
+
+  // Query booker player IDs directly
+  const { data: bookerData, error: bookerError } = await supabase
+    .from('matches')
+    .select(
+      `
+      booker_id,
+      booker:match_participants!matches_booker_id_fkey(player_id)
+    `,
+    )
+    .eq('session_id', sessionId)
+    .neq('id', matchId)
+    .not('booker_id', 'is', null)
+
+  if (!bookerError && bookerData) {
+    for (const match of bookerData) {
+      const booker = match.booker as { player_id: string } | null
+      if (booker?.player_id) {
+        playersAlreadyBookers.add(booker.player_id)
+      }
+    }
+  }
+
+  // Shuffle participants randomly
+  const shuffled = [...participants].sort(() => Math.random() - 0.5)
+
+  // Sort so that players who are already bookers come last
+  shuffled.sort((a, b) => {
+    const aIsBooker = playersAlreadyBookers.has(a.player_id)
+    const bIsBooker = playersAlreadyBookers.has(b.player_id)
+    if (aIsBooker && !bIsBooker) return 1
+    if (!aIsBooker && bIsBooker) return -1
+    return 0
+  })
+
+  // Return the best candidate's participant ID
+  return shuffled[0].id
+}
+
+/**
+ * Pure function to generate matches from voting results.
+ * This is the external matching engine that can be replaced in the future.
+ *
+ * @param options - All available time slot options (time + level combinations)
+ * @param votes - All votes cast by players
+ * @returns Array of matches to create, each with assigned players
+ *
+ * Logic:
+ * - For each option, find all votes
+ * - If zero votes → skip option (no empty matches)
+ * - If 1+ votes → split into matches of 4 players each
+ *   - Full matches: groups of exactly 4
+ *   - Remainder: leftover players (1-3) get their own match with open slots
+ */
+export function generateMatchesFromVotes(
+  options: TimeSlotOption[],
+  votes: VoteInput[],
+): GeneratedMatch[] {
+  const matches: GeneratedMatch[] = []
+
+  for (const option of options) {
+    // Find all votes for this option
+    const votesForOption = votes.filter((vote) => vote.optionId === option.id)
+
+    // Skip options with no votes
+    if (votesForOption.length === 0) {
+      continue
+    }
+
+    // Split voters into matches of 4 players each
+    const playersPerMatch = 4
+    const matchesNeeded = Math.ceil(votesForOption.length / playersPerMatch)
+
+    for (let i = 0; i < matchesNeeded; i++) {
+      const playersForThisMatch = votesForOption.slice(
+        i * playersPerMatch,
+        (i + 1) * playersPerMatch,
+      )
+
+      matches.push({
+        optionId: option.id,
+        timeSlotId: option.timeSlotId,
+        level: option.level,
+        startTime: option.startTime,
+        endTime: option.endTime,
+        maxPlayers: playersPerMatch,
+        playerIds: playersForThisMatch.map((vote) => vote.playerId),
+      })
+    }
+  }
+
+  return matches
+}
 
 // Database time slot types (stored as JSON)
 interface RawTimeSlotOption {
@@ -191,10 +330,22 @@ export const fetchSession = createServerFn({ method: 'GET' })
           return aTime - bTime
         })
 
+      // Parse venues from JSON or create from legacy fields
+      const venues: SessionVenue[] = sessionRow.venues
+        ? typeof sessionRow.venues === 'string'
+          ? JSON.parse(sessionRow.venues)
+          : sessionRow.venues
+        : [
+            {
+              name: sessionRow.venue_name || '',
+              location: sessionRow.venue_location || '',
+              isPrimary: true,
+            },
+          ]
+
       const session: Session = {
         id: sessionRow.public_id,
-        venueName: sessionRow.venue_name || '',
-        venueLocation: sessionRow.venue_location || '',
+        venues,
         date: sessionDate,
         levels: (sessionRow.levels || []).map((level) => ({
           level,
@@ -203,6 +354,9 @@ export const fetchSession = createServerFn({ method: 'GET' })
         timeSlots,
         limitPlayers: sessionRow.limit_players || false,
         playersPerSlot: sessionRow.players_per_slot || undefined,
+        votingClosesAt: sessionRow.voting_closes_at
+          ? new Date(sessionRow.voting_closes_at)
+          : undefined,
         status: sessionRow.status,
       }
 
@@ -218,7 +372,7 @@ export const fetchSession = createServerFn({ method: 'GET' })
 
 export const fetchMatches = createServerFn({ method: 'GET' })
   .inputValidator((sessionId: string) => sessionId)
-  .handler(async ({ data: sessionPublicId }) => {
+  .handler(async ({ data: sessionPublicId }): Promise<Match[]> => {
     try {
       const supabase = getSupabaseServerClient()
 
@@ -234,16 +388,18 @@ export const fetchMatches = createServerFn({ method: 'GET' })
         return []
       }
 
-      // Fetch all matches for this session with participants
+      // Fetch all matches for this session with participants and Playtomic data
+      // Use explicit FK reference to avoid ambiguity with booker_id relationship
       const { data: matchesData, error: matchesError } = await supabase
         .from('matches')
         .select(
           `
           *,
-          match_participants (
+          match_participants!match_participants_match_id_fkey (
             *,
             players (*)
-          )
+          ),
+          playtomic_matches (*)
         `,
         )
         .eq('session_id', sessionRow.id)
@@ -260,12 +416,38 @@ export const fetchMatches = createServerFn({ method: 'GET' })
       }
 
       // Transform database matches to Match type
-      const matches = matchesData.map((match) => {
-        const participants = (match.match_participants as Array<any>) || []
+      const matches: Match[] = matchesData.map((match) => {
+        const participants = match.match_participants
         const players = participants.map((p) => ({
           ...p.players,
+          votedAt: new Date(p.joined_at), // Use joined_at as votedAt timestamp
           status: 'draft' as const, // Default status for now
         }))
+
+        // Transform Playtomic match data if it exists
+        const playtomicMatch = match.playtomic_matches
+          ? {
+              id: match.playtomic_matches.id,
+              playtomic_match_id: match.playtomic_matches.playtomic_match_id,
+              match_url: match.playtomic_matches.match_url,
+              club_name: match.playtomic_matches.club_name,
+              court_name: match.playtomic_matches.court_name,
+              start_time: match.playtomic_matches.start_time,
+              end_time: match.playtomic_matches.end_time,
+              playtomic_players: match.playtomic_matches.playtomic_players as any,
+              match_status: match.playtomic_matches.match_status as
+                | 'scheduled'
+                | 'played'
+                | 'cancelled'
+                | null,
+              score: match.playtomic_matches.score as
+                | { team1: number; team2: number }
+                | null,
+              last_synced_at: match.playtomic_matches.last_synced_at,
+              created_at: match.playtomic_matches.created_at,
+              updated_at: match.playtomic_matches.updated_at,
+            }
+          : null
 
         return {
           id: match.public_id,
@@ -274,9 +456,13 @@ export const fetchMatches = createServerFn({ method: 'GET' })
             id: match.time_slot_id,
             range: [new Date(match.start_time), new Date(match.end_time)],
           },
-          level: match.level,
+          level: match.level as
+            | 'beginner'
+            | 'improver'
+            | 'intermediate'
+            | 'advanced',
           players,
-          playtomicMatch: null, // No Playtomic integration yet
+          playtomicMatch,
           status: 'draft' as const, // Default status
         }
       })
@@ -403,7 +589,7 @@ export const joinMatch = createServerFn({ method: 'POST' })
     // Get match ID from public_id
     const { data: matchRow, error: matchError } = await supabase
       .from('matches')
-      .select('id, max_players, start_time, end_time, session_id')
+      .select('id, max_players, start_time, end_time, session_id, booker_id')
       .eq('public_id', data.matchPublicId)
       .single()
 
@@ -441,6 +627,26 @@ export const joinMatch = createServerFn({ method: 'POST' })
       throw new Error(`Failed to join match: ${error.message}`)
     }
 
+    // If match has no booker, assign the best one (considering session-wide fairness)
+    if (!matchRow.booker_id) {
+      const bestBookerId = await selectBestBooker(
+        supabase,
+        matchRow.id,
+        matchRow.session_id,
+      )
+      if (bestBookerId) {
+        const { error: updateError } = await supabase
+          .from('matches')
+          .update({ booker_id: bestBookerId })
+          .eq('id', matchRow.id)
+
+        if (updateError) {
+          console.error('Error assigning booker:', updateError)
+          // Don't fail the join operation for booker assignment
+        }
+      }
+    }
+
     return { success: true }
   })
 
@@ -457,16 +663,31 @@ export const unjoinMatch = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     const supabase = getSupabaseServerClient()
 
-    // Get match ID from public_id
+    // Get match ID from public_id along with booker info
     const { data: matchRow, error: matchError } = await supabase
       .from('matches')
-      .select('id')
+      .select('id, session_id, booker_id')
       .eq('public_id', data.matchPublicId)
       .single()
 
     if (matchError || !matchRow) {
       throw new Error('Match not found')
     }
+
+    // Get the participant ID before deleting (to check if they are the booker)
+    const { data: participantRow, error: participantError } = await supabase
+      .from('match_participants')
+      .select('id')
+      .eq('match_id', matchRow.id)
+      .eq('player_id', data.playerId)
+      .single()
+
+    if (participantError || !participantRow) {
+      throw new Error('Participant not found')
+    }
+
+    const leavingParticipantId = participantRow.id
+    const isLeavingBooker = matchRow.booker_id === leavingParticipantId
 
     // Delete the participant
     const { error } = await supabase
@@ -478,6 +699,26 @@ export const unjoinMatch = createServerFn({ method: 'POST' })
     if (error) {
       console.error('Error leaving match:', error)
       throw new Error(`Failed to leave match: ${error.message}`)
+    }
+
+    // If the leaving player was the booker, reassign to another participant
+    if (isLeavingBooker) {
+      const newBookerId = await selectBestBooker(
+        supabase,
+        matchRow.id,
+        matchRow.session_id,
+      )
+
+      // Update booker_id (will be null if no participants left)
+      const { error: updateError } = await supabase
+        .from('matches')
+        .update({ booker_id: newBookerId })
+        .eq('id', matchRow.id)
+
+      if (updateError) {
+        console.error('Error reassigning booker:', updateError)
+        // Don't fail the unjoin operation for booker reassignment
+      }
     }
 
     return { success: true }
@@ -502,82 +743,69 @@ async function generateMatchesHelper(sessionPublicId: string) {
   // Get all votes for this session
   const { data: votes, error: votesError } = await supabase
     .from('session_votes')
-    .select('*, players(*)')
+    .select('option_id, player_id')
     .eq('session_id', sessionRow.id)
 
   if (votesError) {
     throw new Error(`Failed to fetch votes: ${votesError.message}`)
   }
 
-  // Parse time slots
+  // Parse time slots from JSON
   const timeSlots =
     typeof sessionRow.time_slots === 'string'
       ? JSON.parse(sessionRow.time_slots)
       : sessionRow.time_slots
 
-  const matchesToCreate: Array<any> = []
-  const participantsToCreate: Array<any> = []
-
-  // Group votes by time slot and level
+  // Transform database format to function input
+  const options: TimeSlotOption[] = []
   for (const timeSlot of timeSlots) {
     for (const option of timeSlot.options) {
-      const votersForOption = votes?.filter(
-        (vote) => vote.option_id === option.id,
-      )
-
-      if (!votersForOption || votersForOption.length === 0) {
-        // No votes for this option, create empty match slots
-        const matchId = uid.rnd()
-        matchesToCreate.push({
-          session_id: sessionRow.id,
-          public_id: matchId,
-          time_slot_id: timeSlot.id,
-          level: option.level,
-          start_time: timeSlot.range[0],
-          end_time: timeSlot.range[1],
-          max_players: 4, // Matches always have 4 players
-        })
-      } else {
-        // Create matches based on votes (always 4 players per match)
-        const playersPerMatch = 4
-
-        const matchesNeeded = Math.ceil(
-          votersForOption.length / playersPerMatch,
-        )
-
-        for (let i = 0; i < matchesNeeded; i++) {
-          const matchId = uid.rnd()
-          matchesToCreate.push({
-            session_id: sessionRow.id,
-            public_id: matchId,
-            time_slot_id: timeSlot.id,
-            level: option.level,
-            start_time: timeSlot.range[0],
-            end_time: timeSlot.range[1],
-            max_players: playersPerMatch,
-          })
-
-          // Assign players to this match
-          const playersForThisMatch = votersForOption.slice(
-            i * playersPerMatch,
-            (i + 1) * playersPerMatch,
-          )
-
-          for (const vote of playersForThisMatch) {
-            participantsToCreate.push({
-              match_public_id: matchId,
-              player_id: vote.player_id,
-              source: 'vote',
-            })
-          }
-        }
-
-        // If last match isn't full, it has open slots for manual joining
-      }
+      options.push({
+        id: option.id,
+        timeSlotId: timeSlot.id,
+        level: option.level,
+        startTime: new Date(timeSlot.range[0]),
+        endTime: new Date(timeSlot.range[1]),
+      })
     }
   }
 
-  // Insert matches
+  const voteInputs: VoteInput[] =
+    votes?.map((vote) => ({
+      optionId: vote.option_id,
+      playerId: vote.player_id,
+    })) || []
+
+  // Call the pure match generation function
+  const generatedMatches = generateMatchesFromVotes(options, voteInputs)
+
+  // Transform domain model back to database format
+  const matchesToCreate: Array<any> = []
+  const participantsToCreate: Array<any> = []
+
+  for (const match of generatedMatches) {
+    const matchId = uid.rnd()
+    matchesToCreate.push({
+      session_id: sessionRow.id,
+      public_id: matchId,
+      time_slot_id: match.timeSlotId,
+      level: match.level,
+      start_time: match.startTime.toISOString(),
+      end_time: match.endTime.toISOString(),
+      max_players: match.maxPlayers,
+    })
+
+    // Add participants for this match
+    for (const playerId of match.playerIds) {
+      participantsToCreate.push({
+        match_public_id: matchId,
+        player_id: playerId,
+        source: 'vote',
+      })
+    }
+  }
+
+  // Insert matches into database
   const { data: insertedMatches, error: matchesError } = await supabase
     .from('matches')
     .insert(matchesToCreate)
@@ -608,15 +836,69 @@ async function generateMatchesHelper(sessionPublicId: string) {
 
   // Insert participants
   if (participantsWithIds.length > 0) {
-    const { error: participantsError } = await supabase
-      .from('match_participants')
-      .insert(participantsWithIds)
+    const { data: insertedParticipants, error: participantsError } =
+      await supabase
+        .from('match_participants')
+        .insert(participantsWithIds)
+        .select()
 
     if (participantsError) {
       console.error('Error creating participants:', participantsError)
       throw new Error(
         `Failed to add players to matches: ${participantsError.message}`,
       )
+    }
+
+    // Assign bookers to each match
+    // Strategy: For each match, pick a random participant, but prefer players
+    // who are not already bookers in other matches in this session
+    if (insertedParticipants && insertedParticipants.length > 0) {
+      // Group participants by match_id
+      const participantsByMatch = new Map<number, typeof insertedParticipants>()
+      for (const participant of insertedParticipants) {
+        const existing = participantsByMatch.get(participant.match_id) || []
+        existing.push(participant)
+        participantsByMatch.set(participant.match_id, existing)
+      }
+
+      // Track which players are already assigned as bookers
+      const playersAlreadyBookers = new Set<string>()
+
+      // Process matches in order to assign bookers fairly
+      for (const matchId of participantsByMatch.keys()) {
+        const participants = participantsByMatch.get(matchId) || []
+
+        if (participants.length === 0) continue
+
+        // Shuffle participants randomly
+        const shuffled = [...participants].sort(() => Math.random() - 0.5)
+
+        // Sort so that players who are already bookers come last
+        shuffled.sort((a, b) => {
+          const aIsBooker = playersAlreadyBookers.has(a.player_id)
+          const bIsBooker = playersAlreadyBookers.has(b.player_id)
+          if (aIsBooker && !bIsBooker) return 1
+          if (!aIsBooker && bIsBooker) return -1
+          return 0
+        })
+
+        // Pick the first participant (least likely to be already a booker)
+        const selectedBooker = shuffled[0]
+
+        // Update the match with the booker_id
+        const { error: updateError } = await supabase
+          .from('matches')
+          .update({ booker_id: selectedBooker.id })
+          .eq('id', matchId)
+
+        if (updateError) {
+          console.error('Error assigning booker:', updateError)
+          // Don't fail the entire operation for booker assignment
+        } else {
+          // Track this player as a booker
+          playersAlreadyBookers.add(selectedBooker.player_id)
+        }
+      }
     }
   }
 
@@ -627,146 +909,8 @@ async function generateMatchesHelper(sessionPublicId: string) {
 export const generateMatches = createServerFn({ method: 'POST' })
   .inputValidator(zodValidator(z.object({ sessionPublicId: z.string() })))
   .handler(async ({ data }) => {
-    const supabase = getSupabaseServerClient()
-    const uid = new ShortUniqueId({ length: 8 })
-
-    // Get session
-    const { data: sessionRow, error: sessionError } = await supabase
-      .from('sessions')
-      .select('*')
-      .eq('public_id', data.sessionPublicId)
-      .single()
-
-    if (sessionError || !sessionRow) {
-      throw new Error('Session not found')
-    }
-
-    // Get all votes for this session
-    const { data: votes, error: votesError } = await supabase
-      .from('session_votes')
-      .select('*, players(*)')
-      .eq('session_id', sessionRow.id)
-
-    if (votesError) {
-      throw new Error(`Failed to fetch votes: ${votesError.message}`)
-    }
-
-    // Parse time slots
-    const timeSlots =
-      typeof sessionRow.time_slots === 'string'
-        ? JSON.parse(sessionRow.time_slots)
-        : sessionRow.time_slots
-
-    const matchesToCreate: Array<any> = []
-    const participantsToCreate: Array<any> = []
-
-    // Group votes by time slot and level
-    for (const timeSlot of timeSlots) {
-      for (const option of timeSlot.options) {
-        const votersForOption = votes?.filter(
-          (vote) => vote.option_id === option.id,
-        )
-
-        if (!votersForOption || votersForOption.length === 0) {
-          // No votes for this option, create empty match slots
-          const matchId = uid.rnd()
-          matchesToCreate.push({
-            session_id: sessionRow.id,
-            public_id: matchId,
-            time_slot_id: timeSlot.id,
-            level: option.level,
-            start_time: timeSlot.range[0],
-            end_time: timeSlot.range[1],
-            max_players: sessionRow.limit_players
-              ? sessionRow.players_per_slot || 4
-              : 4,
-          })
-        } else {
-          // Create matches based on votes (4 players per match)
-          const playersPerMatch = sessionRow.limit_players
-            ? sessionRow.players_per_slot || 4
-            : 4
-
-          const matchesNeeded = Math.ceil(
-            votersForOption.length / playersPerMatch,
-          )
-
-          for (let i = 0; i < matchesNeeded; i++) {
-            const matchId = uid.rnd()
-            matchesToCreate.push({
-              session_id: sessionRow.id,
-              public_id: matchId,
-              time_slot_id: timeSlot.id,
-              level: option.level,
-              start_time: timeSlot.range[0],
-              end_time: timeSlot.range[1],
-              max_players: playersPerMatch,
-            })
-
-            // Assign players to this match
-            const playersForThisMatch = votersForOption.slice(
-              i * playersPerMatch,
-              (i + 1) * playersPerMatch,
-            )
-
-            for (const vote of playersForThisMatch) {
-              participantsToCreate.push({
-                match_public_id: matchId,
-                player_id: vote.player_id,
-                source: 'vote',
-              })
-            }
-          }
-
-          // If last match isn't full, it has open slots for manual joining
-        }
-      }
-    }
-
-    // Insert matches
-    const { data: insertedMatches, error: matchesError } = await supabase
-      .from('matches')
-      .insert(matchesToCreate)
-      .select()
-
-    if (matchesError) {
-      console.error('Error creating matches:', matchesError)
-      throw new Error(`Failed to create matches: ${matchesError.message}`)
-    }
-
-    // Create a map of public_id to id for participants
-    const matchIdMap = new Map(
-      insertedMatches.map((match) => [match.public_id, match.id]),
-    )
-
-    // Update participants with actual match IDs
-    const participantsWithIds = participantsToCreate
-      .map((p) => ({
-        match_id: matchIdMap.get(p.match_public_id),
-        player_id: p.player_id,
-        source: p.source,
-      }))
-      .filter((p) => p.match_id !== undefined) as Array<{
-      match_id: number
-      player_id: string
-      source: string
-    }>
-
-    // Insert participants
-    if (participantsWithIds.length > 0) {
-      const { error: participantsError } = await supabase
-        .from('match_participants')
-        .insert(participantsWithIds)
-
-      if (participantsError) {
-        console.error('Error creating participants:', participantsError)
-        throw new Error(
-          `Failed to add players to matches: ${participantsError.message}`,
-        )
-      }
-    }
-
-    return { success: true, matchesCreated: insertedMatches.length }
+    // Delegate to the helper function
+    return generateMatchesHelper(data.sessionPublicId)
   })
 
 export const useVoteForSession = ({ sessionId }: { sessionId: string }) => {
@@ -1064,11 +1208,21 @@ export const useMatchActions = ({
 }
 
 export const createSessionValidator = z.object({
-  venueName: z.string().min(1, { message: 'Venue name is required' }),
-  venueLocation: z
-    .string()
-    .url({ message: 'Please enter a valid URL for the venue' }),
-  venuePlaceId: z.string().min(1, { message: 'Venue Place ID is required' }),
+  venues: z
+    .array(
+      z.object({
+        name: z.string().min(1, { message: 'Venue name is required' }),
+        location: z
+          .string()
+          .url({ message: 'Please enter a valid URL for the venue' }),
+        placeId: z.string().optional(),
+        isPrimary: z.boolean(),
+      }),
+    )
+    .min(1, { message: 'At least one venue is required' })
+    .refine((venues) => venues.filter((v) => v.isPrimary).length === 1, {
+      message: 'Exactly one venue must be marked as primary',
+    }),
   date: z.date(),
   levels: z
     .array(
@@ -1114,22 +1268,27 @@ export const createSession = createServerFn({ method: 'POST' })
       try {
         const supabase = getSupabaseServerClient()
 
-        // Save venue to database for future autocomplete
-        const { venueName, venueLocation, venuePlaceId } = data
-        if (venueName && venueLocation && venuePlaceId) {
-          try {
-            await upsertVenue({
-              data: {
-                label: venueName,
-                mapsUrl: venueLocation,
-                placeId: venuePlaceId,
-              },
-            })
-          } catch (error) {
-            // Log error but don't fail session creation
-            console.error('Error saving venue:', error)
+        // Save all venues to database for future autocomplete
+        for (const venue of data.venues) {
+          if (venue.name && venue.location && venue.placeId) {
+            try {
+              await upsertVenue({
+                data: {
+                  label: venue.name,
+                  mapsUrl: venue.location,
+                  placeId: venue.placeId,
+                },
+              })
+            } catch (error) {
+              // Log error but don't fail session creation
+              console.error('Error saving venue:', error)
+            }
           }
         }
+
+        // Get primary venue for legacy fields
+        const primaryVenue =
+          data.venues.find((v) => v.isPrimary) || data.venues[0]
 
         // Generate unique session ID
         const uid = new ShortUniqueId({ length: 8 })
@@ -1174,8 +1333,9 @@ export const createSession = createServerFn({ method: 'POST' })
         // Insert session into Supabase
         const sessionData = {
           public_id: uid.rnd(),
-          venue_name: data.venueName,
-          venue_location: data.venueLocation,
+          venue_name: primaryVenue.name,
+          venue_location: primaryVenue.location,
+          venues: JSON.stringify(data.venues),
           // Combine session.date and session.time into a single ISO datetime string for the "date" field.
           date: formatISO(data.date),
           levels: data.levels.map((l) => l.level),

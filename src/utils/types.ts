@@ -4,36 +4,77 @@ export type Player = Database['public']['Tables']['players']['Row']
 export type AppRole = Database['public']['Enums']['app_role']
 export type UserRole = Database['public']['Tables']['user_roles']['Row']
 export type SessionStatus = Database['public']['Enums']['session_status']
+export type Level = Database['public']['Enums']['Levels']
 
 export type Option = {
   id: string
   slot: { id: string; range: [Date, Date] }
-  level: string
-  players: Array<Player & { votedAt?: Date }>
+  level: Level
+  players: Array<Player & { votedAt: Date }>
 }
 
-export type PlaytomicMatch = {
-  id: string
-  location: string
-  court: string
+// Playtomic player data from API
+export type PlaytomicPlayer = {
+  id: number
+  full_name: string
+  picture: string | null
+  payment_status: 'paid' | 'pending'
+}
+// Playtomic match stored in database
+export type PlaytomicMatchData = {
+  id: number
+  playtomic_match_id: string
+  match_url: string
+  club_name: string
+  court_name: string
+  start_time: string
+  end_time: string
+  playtomic_players: PlaytomicPlayer[]
+  match_status: 'scheduled' | 'played' | 'cancelled' | null
+  score: { team1: number; team2: number } | null
+  last_synced_at: string
+  created_at: string
+  updated_at: string
+}
+
+// Player sync status for UI
+export type PlayerSyncStatus =
+  | 'synced_paid' // In both systems + paid (Emerald ring)
+  | 'synced_unpaid' // In both systems + unpaid (Amber ring)
+  | 'only_local' // Only in our match (Rose ring)
+  | 'only_playtomic' // Only in Playtomic (Violet ring)
+  | 'unconnected' // Match not connected to Playtomic (Gray ring)
+
+// Extended player for match display
+export type MatchPlayer = Player & {
+  syncStatus: PlayerSyncStatus
+  playtomicPaymentStatus?: 'paid' | 'pending'
 }
 
 export interface Match extends Option {
   sessionId: string
-  playtomicMatch: PlaytomicMatch | null
+  playtomicMatch: PlaytomicMatchData | null
   status: 'played' | 'scheduled' | 'draft' | 'cancelled'
-  players: Array<Player & { status?: 'paid' | 'pending' | 'draft' }>
+  players: Array<
+    Option['players'][number] & { status?: 'paid' | 'pending' | 'draft' }
+  >
 }
+
+export type SessionVenue = {
+  name: string
+  location: string
+  placeId?: string
+  isPrimary: boolean
+}
+
 export type SessionForm = {
-  venueName: string
-  venueLocation: string
-  venuePlaceId?: string
+  venues: Array<SessionVenue>
   date: Date
   levels: Array<{
     level: string
     timeSlots: Array<{ id: string; range: [Date, Date] }>
   }>
-  timeBlocks: string
+  timeBlocks: '60' | '90'
   limitPlayers: boolean
   playersPerSlot?: number
   votingClosesAt?: Date
