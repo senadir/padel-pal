@@ -190,7 +190,7 @@ function MatchModalComponent() {
     navigate({ to: '/sessions/$id', params: { id: sessionId } })
   }
 
-  const returnUrl = `/sessions/${sessionId}/matches/${matchId}`
+  const returnUrl = `/sessions/${sessionId}/${matchId}`
 
   const handleJoinMatch = () => {
     if (!activeMatch) return
