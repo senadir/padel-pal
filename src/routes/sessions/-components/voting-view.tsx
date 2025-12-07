@@ -68,6 +68,7 @@ export const VotingView = ({ session }: { session: Session }) => {
 
   const { voteForSession: voteForSessionFn } = useVoteForSession({
     sessionId,
+    currentUserId: currentUser?.id ?? '',
   })
 
   // Wrap voting function to check authentication before allowing vote

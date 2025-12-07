@@ -1011,7 +1011,13 @@ export const generateMatches = createServerFn({ method: 'POST' })
     }),
   )
 
-export const useVoteForSession = ({ sessionId }: { sessionId: string }) => {
+export const useVoteForSession = ({
+  sessionId,
+  currentUserId,
+}: {
+  sessionId: string
+  currentUserId: string
+}) => {
   const queryClient = useQueryClient()
 
   const { mutate: voteForSession } = useMutation({
@@ -1197,6 +1203,10 @@ export const useVoteForSession = ({ sessionId }: { sessionId: string }) => {
         queryClient.isMutating({ mutationKey: ['vote', sessionId] }) === 1
       ) {
         queryClient.invalidateQueries({ queryKey: ['sessions', sessionId] })
+        // Invalidate user participation to update badges on home page
+        queryClient.invalidateQueries({
+          queryKey: ['userParticipation', currentUserId],
+        })
       }
     },
   })
@@ -1250,6 +1260,10 @@ export const useMatchActions = ({
       }
       // Refetch matches to get updated data
       queryClient.invalidateQueries({ queryKey: ['matches', sessionId] })
+      // Invalidate user participation to update badges on home page
+      queryClient.invalidateQueries({
+        queryKey: ['userParticipation', currentUserId],
+      })
     },
   })
 
@@ -1289,6 +1303,10 @@ export const useMatchActions = ({
       }
       // Refetch matches to get updated data
       queryClient.invalidateQueries({ queryKey: ['matches', sessionId] })
+      // Invalidate user participation to update badges on home page
+      queryClient.invalidateQueries({
+        queryKey: ['userParticipation', currentUserId],
+      })
     },
   })
 
