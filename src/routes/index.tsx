@@ -22,9 +22,8 @@ import {
   sessionsQueryOptions,
   userParticipationQueryOptions,
 } from '@/utils/sessions'
-import { useAuth, useIsOrganizer } from '@/contexts/auth'
+import { useIsOrganizer } from '@/contexts/auth'
 import { Badge } from '@/components/ui/badge'
-import { useQuery } from '@tanstack/react-query'
 
 export const Route = createFileRoute('/')({
   head: () => ({
@@ -98,10 +97,18 @@ export const Route = createFileRoute('/')({
     message: z.string().optional(),
   }),
   loader: async ({ context }) => {
-    const allSessions = await context.queryClient.ensureQueryData(
-      sessionsQueryOptions(),
-    )
     const { authData } = context
+    const playerId = authData?.player?.id
+
+    // Fetch sessions and user participation in parallel
+    const [allSessions, participation] = await Promise.all([
+      context.queryClient.ensureQueryData(sessionsQueryOptions()),
+      playerId
+        ? context.queryClient.ensureQueryData(
+            userParticipationQueryOptions(playerId),
+          )
+        : Promise.resolve({ votedSessionIds: [], joinedSessionIds: [] }),
+    ])
 
     // Filter sessions based on user role
     const isOrganizer = authData?.role === 'organizer'
@@ -127,22 +134,15 @@ export const Route = createFileRoute('/')({
       })
     }
 
-    return { sessions }
+    return { sessions, participation }
   },
   component: App,
 })
 
 function App() {
   const search = useSearch({ from: Route.id })
-  const { sessions } = Route.useLoaderData()
+  const { sessions, participation } = Route.useLoaderData()
   const isOrganizer = useIsOrganizer()
-  const { authData } = useAuth()
-  const playerId = authData?.player?.id
-
-  // Fetch user's participation data
-  const { data: participation } = useQuery(
-    userParticipationQueryOptions(playerId),
-  )
 
   // Show error toast if redirected with error
   useEffect(() => {
@@ -196,10 +196,10 @@ function App() {
           </div>
           <div className="flex flex-col gap-4">
             {sessions.map((session) => {
-              const hasJoined = participation?.joinedSessionIds.includes(
+              const hasJoined = participation.joinedSessionIds.includes(
                 session.id,
               )
-              const hasVoted = participation?.votedSessionIds.includes(
+              const hasVoted = participation.votedSessionIds.includes(
                 session.id,
               )
 
