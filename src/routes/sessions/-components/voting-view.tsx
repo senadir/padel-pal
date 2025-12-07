@@ -2,7 +2,7 @@ import { Link, useNavigate } from '@tanstack/react-router'
 import { format } from 'date-fns'
 import { useEffect, useMemo, useState } from 'react'
 import { EllipsisVertical, ExternalLink, Loader2 } from 'lucide-react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Route } from '../$id'
 import type { Option, Player, Session } from '@/utils/types'
@@ -21,17 +21,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuGroup,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuPortal,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
-  DropdownMenuShortcut,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import {
@@ -56,7 +46,6 @@ import {
 } from '@/components/ui/alert-dialog'
 import {
   deleteSession,
-  sessionQueryOptions,
   updateSessionStatus,
   useVoteForSession,
 } from '@/utils/sessions'
@@ -267,7 +256,7 @@ export const VotingView = ({ session }: { session: Session }) => {
                   View all players and vote times
                 </DrawerDialogDescription>
               </DrawerDialogHeader>
-              <PlayerListDialog currentGame={activeOption} />
+              <PlayerListDialog currentGame={activeOption} sessionId={session.id} />
             </>
           )}
           <DrawerDialogFooter>
@@ -411,7 +400,13 @@ const GameSlot = ({
   )
 }
 
-const PlayerListDialog = ({ currentGame }: { currentGame: Option }) => {
+const PlayerListDialog = ({
+  currentGame,
+  sessionId,
+}: {
+  currentGame: Option
+  sessionId: string
+}) => {
   return (
     <div className="flex flex-col gap-3 max-h-[60vh] overflow-auto p-4">
       {[...currentGame.players]
@@ -425,6 +420,7 @@ const PlayerListDialog = ({ currentGame }: { currentGame: Option }) => {
             key={player.id}
             player={player}
             option={currentGame}
+            sessionId={sessionId}
           />
         ))}
     </div>
@@ -434,11 +430,16 @@ const PlayerListDialog = ({ currentGame }: { currentGame: Option }) => {
 const PlayerListItem = ({
   player,
   option: currentGame,
+  sessionId,
 }: {
   player: Option['players'][number]
   option: Option
+  sessionId: string
 }) => {
   const [playerDialogOpen, setPlayerDialogOpen] = useState(false)
+  const { authData } = useAuth()
+  const currentUser = authData?.player
+
   return (
     <div className="flex items-center gap-3">
       <Avatar className="size-8">
@@ -458,154 +459,72 @@ const PlayerListItem = ({
             : 'No vote time'}
         </div>
       </div>
-      <DropdownMenu open={playerDialogOpen} onOpenChange={setPlayerDialogOpen}>
-        <DropdownMenuTrigger asChild>
-          <Button variant="ghost">
-            <span className="sr-only">Open menu</span>
-            <EllipsisVertical />
-          </Button>
-        </DropdownMenuTrigger>
-        {playerDialogOpen && (
-          <PlayerOptionDialog player={player} currentGame={currentGame} />
-        )}
-      </DropdownMenu>
+      {currentUser && (
+        <DropdownMenu open={playerDialogOpen} onOpenChange={setPlayerDialogOpen}>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon">
+              <span className="sr-only">Open menu</span>
+              <EllipsisVertical className="size-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          {playerDialogOpen && (
+            <PlayerOptionDialog
+              player={player}
+              currentGame={currentGame}
+              sessionId={sessionId}
+            />
+          )}
+        </DropdownMenu>
+      )}
     </div>
   )
 }
 
 const PlayerOptionDialog = ({
   player,
-  currentGame,
 }: {
   player: Player
   currentGame: Option
+  sessionId: string
 }) => {
-  const { data: session } = useQuery(sessionQueryOptions(currentGame.slot.id))
-  const { authData } = useAuth()
-  const currentUser = authData?.player
-
-  if (!currentUser) {
-    return null
-  }
-  const { voteForSession } = useVoteForSession({
-    sessionId: currentGame.slot.id,
-  })
-  if (!session) {
-    return null
-  }
-
-  const isSlotDisabled = (option: Option) => {
-    if (currentGame.slot.id === option.slot.id) {
-      return false
+  const handleCopyNumber = async () => {
+    if (!player.phone) {
+      toast.error('No phone number available')
+      return
     }
-    if (
-      session.timeSlots.some(
-        (slot) =>
-          slot.id !== currentGame.slot.id &&
-          slot.options.some((option) =>
-            option.players.some((_player) => _player.id === player.id),
-          ),
-      )
-    ) {
-      return true
-    }
-    return false
+    await navigator.clipboard.writeText(player.phone)
+    toast.success('Phone number copied')
   }
-
-  const filtered = session.timeSlots
-    .map((slot) => ({
-      ...slot,
-      options: slot.options.filter((option) =>
-        option.players.some((_player) => _player.id === player.id),
-      ),
-    }))
-    .filter((slot) => slot.options.length > 0)
-    .reduce<Record<string, string>>((acc, slot) => {
-      acc[slot.id] = slot.options[0].id
-      return acc
-    }, {})
 
   return (
-    <DropdownMenuContent className="w-56" align="start">
-      <DropdownMenuLabel>Manage player</DropdownMenuLabel>
-      <DropdownMenuGroup>
-        <DropdownMenuItem>
-          Remove
-          <DropdownMenuShortcut>⌘D</DropdownMenuShortcut>
-        </DropdownMenuItem>
-        <DropdownMenuItem>
-          Block
-          <DropdownMenuShortcut>⌃⌘B</DropdownMenuShortcut>
-        </DropdownMenuItem>
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger>Move</DropdownMenuSubTrigger>
-          <DropdownMenuPortal>
-            <DropdownMenuSubContent>
-              {session.timeSlots.map((timeSlot) => (
-                <>
-                  <DropdownMenuLabel key={timeSlot.id}>
-                    {timeSlot.id}
-                  </DropdownMenuLabel>
-                  <DropdownMenuRadioGroup
-                    value={filtered[timeSlot.id] ?? ''}
-                    onValueChange={(value) => {
-                      const option = timeSlot.options.find(
-                        (opt) => opt.id === value,
-                      )
-                      if (option) {
-                        voteForSession({
-                          timeSlot: timeSlot.id,
-                          level: option.level,
-                          session,
-                          currentUser,
-                        })
-                      }
-                    }}
-                  >
-                    {timeSlot.options.map((option) => (
-                      <DropdownMenuRadioItem
-                        key={option.id}
-                        value={option.id}
-                        disabled={isSlotDisabled(option)}
-                      >
-                        {option.level}
-                      </DropdownMenuRadioItem>
-                    ))}
-                  </DropdownMenuRadioGroup>
-                  <DropdownMenuSeparator />
-                </>
-              ))}
-            </DropdownMenuSubContent>
-          </DropdownMenuPortal>
-        </DropdownMenuSub>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem>
-          Copy number
-          <DropdownMenuShortcut>⌃⌘C</DropdownMenuShortcut>
-        </DropdownMenuItem>
+    <DropdownMenuContent className="w-56" align="end">
+      <DropdownMenuItem onClick={handleCopyNumber} disabled={!player.phone}>
+        Copy number
+      </DropdownMenuItem>
+      {player.phone && (
         <DropdownMenuItem asChild>
           <a
-            href={`https://wa.me/${player.phone?.replace(/[^0-9]/g, '') ?? ''}`}
+            href={`https://wa.me/${player.phone.replace(/[^0-9]/g, '')}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-2"
           >
             Chat on WhatsApp
             <ExternalLink className="ml-auto h-3 w-3" />
           </a>
         </DropdownMenuItem>
+      )}
+      {player.playtomic_id && (
         <DropdownMenuItem asChild>
           <a
             href={`https://app.playtomic.io/profile/user/${player.playtomic_id}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-2"
           >
             Open in Playtomic
             <ExternalLink className="ml-auto h-3 w-3" />
           </a>
         </DropdownMenuItem>
-      </DropdownMenuGroup>
+      )}
     </DropdownMenuContent>
   )
 }
