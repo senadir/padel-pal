@@ -4,7 +4,7 @@ import { format } from 'date-fns'
 import { ExternalLink, PlusIcon, EllipsisVertical } from 'lucide-react'
 import { useState } from 'react'
 import type { Match, Player } from '@/utils/types'
-import { matchQueryOptions } from '@/utils/sessions'
+import { matchQueryOptions, useMatchActions } from '@/utils/sessions'
 import { sessionQueryOptions } from './$id'
 import { useAuth } from '@/contexts/auth'
 import {
@@ -122,13 +122,24 @@ function MatchModalComponent() {
   const isCurrentUserInMatch =
     activeMatch?.players.some((p) => p.id === currentUser?.id) ?? false
 
+  const { toggleMatchParticipation, isLoading: isMatchActionLoading } =
+    useMatchActions({
+      sessionId,
+      currentUserId: currentUser?.id ?? '',
+    })
+
   const handleClose = () => {
     navigate({ to: '/sessions/$id', params: { id: sessionId } })
   }
 
-  const handleToggleParticipation = () => {
-    // This will be handled by the parent component's mutation
-    // For now, we'll just close the modal
+  const handleJoinMatch = () => {
+    if (!activeMatch || !currentUser?.id) return
+    toggleMatchParticipation(activeMatch.id, false)
+  }
+
+  const handleLeaveMatch = () => {
+    if (!activeMatch || !currentUser?.id) return
+    toggleMatchParticipation(activeMatch.id, true)
   }
 
   if (!activeMatch) {
@@ -161,8 +172,8 @@ function MatchModalComponent() {
               player={player}
               match={activeMatch}
               currentUser={currentUser}
-              onLeaveMatch={handleToggleParticipation}
-              isLoading={false}
+              onLeaveMatch={handleLeaveMatch}
+              isLoading={isMatchActionLoading}
             />
           ))}
           {activeMatch.players.length < 4 &&
@@ -174,14 +185,14 @@ function MatchModalComponent() {
                 className="flex gap-2 items-center justify-start p-0"
                 variant="ghost"
                 type="button"
-                onClick={handleToggleParticipation}
-                disabled={isCurrentUserInMatch}
+                onClick={handleJoinMatch}
+                disabled={isCurrentUserInMatch || isMatchActionLoading || !currentUser}
               >
                 <div className="size-8 flex items-center justify-center rounded-full border-1 border-dashed border">
                   <PlusIcon className="size-4 text-muted-foreground" />
                 </div>
                 <span className="text-muted-foreground text-sm">
-                  Click to join
+                  {!currentUser ? 'Login to join' : 'Click to join'}
                 </span>
               </Button>
             ))}

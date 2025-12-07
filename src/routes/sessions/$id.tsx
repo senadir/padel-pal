@@ -1,4 +1,4 @@
-import { createFileRoute, redirect, Link } from '@tanstack/react-router'
+import { createFileRoute, redirect, Link, Outlet } from '@tanstack/react-router'
 import { queryOptions, useSuspenseQuery } from '@tanstack/react-query'
 import { z } from 'zod'
 import { format } from 'date-fns'
@@ -93,60 +93,63 @@ function RouteComponent() {
   )
 
   return (
-    <form className="flex flex-col gap-6">
-      <FieldSet>
-        <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-bold">
-            {format(session.date, 'EEEE, MMMM d')}
-          </h1>
-          <FieldLegend className="flex flex-col gap-2">
-            <div>
-              <a
-                href={session.venues[0].location}
-                target="_blank"
-                className="text-sm text-muted-foreground underline"
-              >
-                {session.venues[0].name}
-              </a>
-              {session.venues.length === 2 && (
-                <span className="text-muted-foreground text-sm">
-                  {' '}
-                  and{' '}
-                  <Link
-                    to={session.venues[1].location}
-                    target="_blank"
-                    className="items-baseline text-sm text-muted-foreground"
-                  >
-                    <span className="underline">{session.venues[1].name}</span>
-                  </Link>
-                </span>
+    <>
+      <form className="flex flex-col gap-6">
+        <FieldSet>
+          <div className="flex flex-col gap-1">
+            <h1 className="text-2xl font-bold">
+              {format(session.date, 'EEEE, MMMM d')}
+            </h1>
+            <FieldLegend className="flex flex-col gap-2">
+              <div>
+                <a
+                  href={session.venues[0].location}
+                  target="_blank"
+                  className="text-sm text-muted-foreground underline"
+                >
+                  {session.venues[0].name}
+                </a>
+                {session.venues.length === 2 && (
+                  <span className="text-muted-foreground text-sm">
+                    {' '}
+                    and{' '}
+                    <Link
+                      to={session.venues[1].location}
+                      target="_blank"
+                      className="items-baseline text-sm text-muted-foreground"
+                    >
+                      <span className="underline">{session.venues[1].name}</span>
+                    </Link>
+                  </span>
+                )}
+                {session.venues.length > 2 && (
+                  <span className="text-muted-foreground text-sm">
+                    and {session.venues.length - 2} other venues
+                  </span>
+                )}
+              </div>
+              <FieldDescription className="text-muted-foreground text-sm">
+                {showMatchesView
+                  ? 'View your games and others, and see which games you can join.'
+                  : 'Vote for which slots you want to play, each vote count as a option.'}
+              </FieldDescription>
+              {session.votingClosesAt && (
+                <p className="text-sm flex items-center gap-1">
+                  <CircleAlert className="size-4" />
+                  Voting closes at{' '}
+                  {format(session.votingClosesAt, 'EEE, MMM d • HH:mm')}
+                </p>
               )}
-              {session.venues.length > 2 && (
-                <span className="text-muted-foreground text-sm">
-                  and {session.venues.length - 2} other venues
-                </span>
-              )}
-            </div>
-            <FieldDescription className="text-muted-foreground text-sm">
-              {showMatchesView
-                ? 'View your games and others, and see which games you can join.'
-                : 'Vote for which slots you want to play, each vote count as a option.'}
-            </FieldDescription>
-            {session.votingClosesAt && (
-              <p className="text-sm flex items-center gap-1">
-                <CircleAlert className="size-4" />
-                Voting closes at{' '}
-                {format(session.votingClosesAt, 'EEE, MMM d • HH:mm')}
-              </p>
-            )}
-          </FieldLegend>
-        </div>
-        {showMatchesView ? (
-          <MatchesView session={session} matches={matches} />
-        ) : (
-          <VotingView session={session} />
-        )}
-      </FieldSet>
-    </form>
+            </FieldLegend>
+          </div>
+          {showMatchesView ? (
+            <MatchesView session={session} matches={matches} />
+          ) : (
+            <VotingView session={session} />
+          )}
+        </FieldSet>
+      </form>
+      <Outlet />
+    </>
   )
 }

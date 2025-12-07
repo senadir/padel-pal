@@ -1,5 +1,6 @@
 import { format } from 'date-fns'
 import { MapPin, Clock, ExternalLink, PlusIcon, Share2 } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
 import type {
   Match,
   Session,
@@ -173,36 +174,44 @@ function MatchCard({ match, session }: { match: Match; session: Session }) {
           {syncedPlayers.map((player) => (
             <Tooltip key={player.id}>
               <TooltipTrigger asChild>
-                <Avatar
-                  className={playerAvatarVariants({
-                    syncStatus: player.syncStatus,
-                  })}
+                <Link
+                  to="/sessions/$id/$matchId"
+                  params={{ id: session.id, matchId: match.id }}
                 >
-                  <AvatarImage
-                    src={player.avatar || undefined}
-                    alt={player.name || 'Player'}
-                  />
-                  <AvatarFallback>
-                    {player.name?.charAt(0).toUpperCase() || 'P'}
-                  </AvatarFallback>
-                </Avatar>
+                  <Avatar
+                    className={playerAvatarVariants({
+                      syncStatus: player.syncStatus,
+                    })}
+                  >
+                    <AvatarImage
+                      src={player.avatar || undefined}
+                      alt={player.name || 'Player'}
+                    />
+                    <AvatarFallback>
+                      {player.name?.charAt(0).toUpperCase() || 'P'}
+                    </AvatarFallback>
+                  </Avatar>
+                </Link>
               </TooltipTrigger>
               <TooltipContent>
                 <p>{getPlayerSyncStatusTooltip(player.syncStatus)}</p>
               </TooltipContent>
             </Tooltip>
           ))}
-          {/* Show empty slots */}
+          {/* Show empty slots - clickable to join */}
           {Array.from({ length: Math.max(0, 4 - syncedPlayers.length) }).map(
             (_, i) => (
-              <Avatar
+              <Link
                 key={`empty-${i}`}
-                className="size-10 border-2 border-dashed"
+                to="/sessions/$id/$matchId"
+                params={{ id: session.id, matchId: match.id }}
               >
-                <AvatarFallback className="bg-muted/50">
-                  <PlusIcon className="h-4 w-4 text-muted-foreground" />
-                </AvatarFallback>
-              </Avatar>
+                <Avatar className="size-10 border-2 border-dashed cursor-pointer hover:border-primary transition-colors">
+                  <AvatarFallback className="bg-muted/50">
+                    <PlusIcon className="h-4 w-4 text-muted-foreground" />
+                  </AvatarFallback>
+                </Avatar>
+              </Link>
             ),
           )}
         </div>
@@ -220,8 +229,13 @@ function MatchCard({ match, session }: { match: Match; session: Session }) {
             </a>
           </Button>
         ) : (
-          <Button className="w-full" disabled variant="outline" size="lg">
-            Not on playtomic yet
+          <Button className="w-full" asChild variant="outline" size="lg">
+            <Link
+              to="/sessions/$id/$matchId"
+              params={{ id: session.id, matchId: match.id }}
+            >
+              Join match
+            </Link>
           </Button>
         )}
       </CardContent>
