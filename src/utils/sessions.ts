@@ -313,7 +313,7 @@ export const fetchUserParticipation = createServerFn({ method: 'GET' })
 
 export const userParticipationQueryOptions = (playerId: string | undefined) =>
   queryOptions({
-    queryKey: ['userParticipation', playerId],
+    queryKey: ['sessions', 'participation', playerId],
     queryFn: () =>
       playerId
         ? fetchUserParticipation({ data: playerId })
@@ -568,7 +568,7 @@ export const sessionQueryOptions = (sessionId: string) =>
 
 export const matchQueryOptions = (sessionId: string) =>
   queryOptions({
-    queryKey: ['matches', sessionId],
+    queryKey: ['sessions', sessionId, 'matches'],
     queryFn: () => fetchMatches({ data: sessionId }),
   })
 
@@ -1205,7 +1205,7 @@ export const useVoteForSession = ({
         queryClient.invalidateQueries({ queryKey: ['sessions', sessionId] })
         // Invalidate user participation to update badges on home page
         queryClient.invalidateQueries({
-          queryKey: ['userParticipation', currentUserId],
+          queryKey: ['sessions', 'participation', currentUserId],
         })
       }
     },
@@ -1244,8 +1244,9 @@ export const useMatchActions = ({
     onSuccess: (_data, matchPublicId) => {
       // Get match data from query cache
       const matches = queryClient.getQueryData<Array<Match>>([
-        'matches',
+        'sessions',
         sessionId,
+        'matches',
       ])
       const match = matches?.find((m) => m.id === matchPublicId)
 
@@ -1259,10 +1260,12 @@ export const useMatchActions = ({
         toast.success('Successfully joined match!')
       }
       // Refetch matches to get updated data
-      queryClient.invalidateQueries({ queryKey: ['matches', sessionId] })
+      queryClient.invalidateQueries({
+        queryKey: ['sessions', sessionId, 'matches'],
+      })
       // Invalidate user participation to update badges on home page
       queryClient.invalidateQueries({
-        queryKey: ['userParticipation', currentUserId],
+        queryKey: ['sessions', 'participation', currentUserId],
       })
     },
   })
@@ -1287,8 +1290,9 @@ export const useMatchActions = ({
     onSuccess: (_data, matchPublicId) => {
       // Get match data from query cache
       const matches = queryClient.getQueryData<Array<Match>>([
-        'matches',
+        'sessions',
         sessionId,
+        'matches',
       ])
       const match = matches?.find((m) => m.id === matchPublicId)
 
@@ -1302,10 +1306,12 @@ export const useMatchActions = ({
         toast.success('Successfully left match!')
       }
       // Refetch matches to get updated data
-      queryClient.invalidateQueries({ queryKey: ['matches', sessionId] })
+      queryClient.invalidateQueries({
+        queryKey: ['sessions', sessionId, 'matches'],
+      })
       // Invalidate user participation to update badges on home page
       queryClient.invalidateQueries({
-        queryKey: ['userParticipation', currentUserId],
+        queryKey: ['sessions', 'participation', currentUserId],
       })
     },
   })
