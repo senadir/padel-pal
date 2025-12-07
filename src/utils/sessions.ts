@@ -943,31 +943,20 @@ export const useVoteForSession = ({ sessionId }: { sessionId: string }) => {
   const queryClient = useQueryClient()
 
   const { mutate: voteForSession } = useMutation({
-    // Use mutation key to allow cancellation of previous in-flight mutations
     mutationKey: ['vote', sessionId],
     mutationFn: async ({
       timeSlot,
       level,
+      session,
       currentUser: user,
     }: {
       timeSlot: string
       level: string
-      session: Session // Still passed for optimistic update, but we read fresh data for server calls
+      session: Session
       currentUser: Player
     }): Promise<void> => {
-      // Read fresh session data from cache to get the latest state
-      // This ensures we see any optimistic updates from rapid clicks
-      const freshSession = queryClient.getQueryData<Session>([
-        'sessions',
-        sessionId,
-      ])
-
-      if (!freshSession) {
-        throw new Error('Session not found')
-      }
-
       // Find the option for this time slot + level combination
-      const slot = freshSession.timeSlots.find((ts) => ts.id === timeSlot)
+      const slot = session.timeSlots.find((ts) => ts.id === timeSlot)
       const option = slot?.options.find((o) => o.level === level)
 
       if (!option) {
@@ -975,7 +964,6 @@ export const useVoteForSession = ({ sessionId }: { sessionId: string }) => {
       }
 
       // Check if user already voted for this option (toggle behavior)
-      // Use fresh data to see current state after optimistic updates
       const alreadyVoted = option.players.some(
         (player) => player.id === user.id,
       )
@@ -990,25 +978,18 @@ export const useVoteForSession = ({ sessionId }: { sessionId: string }) => {
           },
         })
       } else {
-        // Remove ALL votes from this user in ALL time slots first
-        // This prevents the race condition where rapid clicks could leave orphan votes
-        const allUserVotes: Array<{ optionId: string }> = []
-        for (const ts of freshSession.timeSlots) {
-          for (const opt of ts.options) {
-            if (opt.players.some((p) => p.id === user.id)) {
-              allUserVotes.push({ optionId: opt.id })
-            }
-          }
-        }
-
-        // Remove all existing votes (except the one we're about to add)
-        const unvotePromises = allUserVotes
-          .filter((v) => v.optionId !== option.id)
-          .map((v) =>
+        // Remove votes from other levels in same time slot first
+        const otherOptionsInSlot =
+          slot?.options.filter((o) => o.level !== level) || []
+        const unvotePromises = otherOptionsInSlot
+          .filter((otherOption) =>
+            otherOption.players.some((p) => p.id === user.id),
+          )
+          .map((otherOption) =>
             unvoteForOption({
               data: {
                 sessionPublicId: sessionId,
-                optionId: v.optionId,
+                optionId: otherOption.id,
                 playerId: user.id,
               },
             }),
@@ -1137,9 +1118,14 @@ export const useVoteForSession = ({ sessionId }: { sessionId: string }) => {
         toast.success(`You voted for the ${timeSlotStart} ${levelStr} slot`)
       }
     },
-    // Always refetch after error or success to sync with server
+    // Only invalidate when this is the last mutation for this key
+    // This prevents race conditions when rapidly clicking by batching invalidation
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['sessions', sessionId] })
+      if (
+        queryClient.isMutating({ mutationKey: ['vote', sessionId] }) === 1
+      ) {
+        queryClient.invalidateQueries({ queryKey: ['sessions', sessionId] })
+      }
     },
   })
   return { voteForSession }
