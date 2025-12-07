@@ -119,7 +119,7 @@ export const VotingView = ({ session }: { session: Session }) => {
   // Update session status mutation
   const updateStatusMutation = useMutation({
     mutationFn: (
-      status: 'draft' | 'voting' | 'open' | 'cancelled' | 'closed',
+      status: 'draft' | 'voting' | 'poll_closed' | 'open' | 'cancelled' | 'closed',
     ) =>
       updateSessionStatus({
         data: { sessionPublicId: sessionId, status },
@@ -130,8 +130,10 @@ export const VotingView = ({ session }: { session: Session }) => {
         queryKey: ['sessions', sessionId, 'matches'],
       })
 
-      if (status === 'open') {
-        toast.success('Poll closed and matches created')
+      if (status === 'poll_closed') {
+        toast.success('Poll closed and matches created. You can now assign bookers.')
+      } else if (status === 'open') {
+        toast.success('Session opened! Bookers have been notified.')
       } else {
         toast.success('Session marked as ready for voting')
       }
@@ -207,7 +209,7 @@ export const VotingView = ({ session }: { session: Session }) => {
             ) : (
               <Button
                 type="button"
-                onClick={() => updateStatusMutation.mutate('open')}
+                onClick={() => updateStatusMutation.mutate('poll_closed')}
                 disabled={
                   !generatedGamesCount || updateStatusMutation.isPending
                 }
