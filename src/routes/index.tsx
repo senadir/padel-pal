@@ -18,8 +18,13 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from '@/components/ui/empty'
-import { sessionsQueryOptions } from '@/utils/sessions'
-import { useIsOrganizer } from '@/contexts/auth'
+import {
+  sessionsQueryOptions,
+  userParticipationQueryOptions,
+} from '@/utils/sessions'
+import { useAuth, useIsOrganizer } from '@/contexts/auth'
+import { Badge } from '@/components/ui/badge'
+import { useQuery } from '@tanstack/react-query'
 
 export const Route = createFileRoute('/')({
   head: () => ({
@@ -131,6 +136,13 @@ function App() {
   const search = useSearch({ from: Route.id })
   const { sessions } = Route.useLoaderData()
   const isOrganizer = useIsOrganizer()
+  const { authData } = useAuth()
+  const playerId = authData?.player?.id
+
+  // Fetch user's participation data
+  const { data: participation } = useQuery(
+    userParticipationQueryOptions(playerId),
+  )
 
   // Show error toast if redirected with error
   useEffect(() => {
@@ -184,6 +196,28 @@ function App() {
           </div>
           <div className="flex flex-col gap-4">
             {sessions.map((session) => {
+              const hasJoined = participation?.joinedSessionIds.includes(
+                session.id,
+              )
+              const hasVoted = participation?.votedSessionIds.includes(
+                session.id,
+              )
+
+              // Determine badge based on session status and user participation
+              // Priority: Joined > Voted > Session Status
+              let badge: { label: string; variant: 'default' | 'secondary' | 'outline' } | null = null
+              if (hasJoined) {
+                badge = { label: 'Joined', variant: 'default' }
+              } else if (hasVoted && session.status === 'voting') {
+                badge = { label: 'Voted', variant: 'secondary' }
+              } else if (session.status === 'voting') {
+                badge = { label: 'Voting', variant: 'outline' }
+              } else if (session.status === 'open') {
+                badge = { label: 'Open', variant: 'outline' }
+              } else if (session.status === 'closed') {
+                badge = { label: 'Closed', variant: 'outline' }
+              }
+
               return (
                 <Link
                   key={session.id}
@@ -193,9 +227,14 @@ function App() {
                 >
                   <div className="flex items-center justify-between p-6 border rounded-lg hover:bg-accent transition-colors">
                     <div className="flex-1">
-                      <h2 className="text-lg font-semibold mb-2">
-                        {format(session.date, 'EEE, MMM do')}
-                      </h2>
+                      <div className="flex items-center gap-2 mb-2">
+                        <h2 className="text-lg font-semibold">
+                          {format(session.date, 'EEE, MMM do')}
+                        </h2>
+                        {badge && (
+                          <Badge variant={badge.variant}>{badge.label}</Badge>
+                        )}
+                      </div>
                       <p className="text-muted-foreground mb-1">
                         {session.venueName}
                       </p>

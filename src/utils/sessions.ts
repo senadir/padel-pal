@@ -249,6 +249,78 @@ export const sessionsQueryOptions = () =>
     queryFn: () => fetchSessions(),
   })
 
+// Fetch user's participation data (votes and match memberships) per session
+export const fetchUserParticipation = createServerFn({ method: 'GET' })
+  .inputValidator((playerId: string) => playerId)
+  .handler(
+    withSentry(async ({ data: playerId }) => {
+      try {
+        const supabase = getSupabaseServerClient()
+
+        // Fetch all votes by this player with session info
+        const { data: votesData, error: votesError } = await supabase
+          .from('session_votes')
+          .select('session_id, sessions!inner(public_id)')
+          .eq('player_id', playerId)
+
+        if (votesError) {
+          console.error('Error fetching votes:', votesError)
+        }
+
+        // Fetch all match participations by this player with session info
+        // Use explicit FK reference to avoid ambiguity with booker_id relationship
+        const { data: participationsData, error: participationsError } =
+          await supabase
+            .from('match_participants')
+            .select('match_id, matches!match_participants_match_id_fkey(session_id, sessions!inner(public_id))')
+            .eq('player_id', playerId)
+
+        if (participationsError) {
+          console.error('Error fetching participations:', participationsError)
+        }
+
+        // Build sets of session public_ids where user has voted or joined
+        const votedSessionIds = new Set<string>()
+        const joinedSessionIds = new Set<string>()
+
+        votesData?.forEach((vote) => {
+          const sessions = vote.sessions as { public_id: string } | null
+          if (sessions?.public_id) {
+            votedSessionIds.add(sessions.public_id)
+          }
+        })
+
+        participationsData?.forEach((participation) => {
+          const matches = participation.matches as {
+            session_id: number
+            sessions: { public_id: string }
+          } | null
+          if (matches?.sessions?.public_id) {
+            joinedSessionIds.add(matches.sessions.public_id)
+          }
+        })
+
+        return {
+          votedSessionIds: Array.from(votedSessionIds),
+          joinedSessionIds: Array.from(joinedSessionIds),
+        }
+      } catch (err) {
+        console.error('Error in fetchUserParticipation:', err)
+        return { votedSessionIds: [], joinedSessionIds: [] }
+      }
+    }),
+  )
+
+export const userParticipationQueryOptions = (playerId: string | undefined) =>
+  queryOptions({
+    queryKey: ['userParticipation', playerId],
+    queryFn: () =>
+      playerId
+        ? fetchUserParticipation({ data: playerId })
+        : Promise.resolve({ votedSessionIds: [], joinedSessionIds: [] }),
+    enabled: !!playerId,
+  })
+
 export const fetchSession = createServerFn({ method: 'GET' })
   .inputValidator((d: string) => d)
   .handler(
