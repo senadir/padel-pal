@@ -52,7 +52,7 @@ export const Route = createFileRoute('/sessions/$id')({
       ? `${format(session.date, 'EEEE, MMM d')} | Padel Pal`
       : 'Session | Padel Pal'
     const description = session
-      ? `Padel session at ${session.venues[0]?.name || 'TBD'} on ${format(session.date, 'EEEE, MMMM d')}`
+      ? `Padel session at ${session.venues[0]?.name || 'TBD'} on ${format(session.date, 'EEE, MMM d')}`
       : 'View and join this padel session.'
     const ogImage = session
       ? `/api/og?type=session&id=${session.id}`
@@ -92,7 +92,7 @@ function RouteComponent() {
         <FieldSet>
           <div className="flex flex-col gap-1">
             <h1 className="text-2xl font-bold">
-              {format(session.date, 'EEEE, MMMM d')}
+              {format(session.date, 'EEE, MMM d')}
             </h1>
             <FieldLegend className="flex flex-col gap-2">
               <div>

@@ -70,7 +70,7 @@ export const Route = createFileRoute('/sessions/$id/$matchId')({
     const time = format(match.slot.range[0], 'HH:mm')
     const date = format(session.date, 'MMM d')
     const title = `${match.level} ${time} - ${date} | Padel Pal`
-    const description = `${match.level} match at ${time} on ${format(session.date, 'EEEE, MMMM d')}`
+    const description = `${match.level} match at ${time} on ${format(session.date, 'EEE, MMM d')}`
     const ogImage = `/api/og?type=match&id=${match.id}`
 
     return {

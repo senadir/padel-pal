@@ -9,7 +9,7 @@ import { toast } from 'sonner'
 import { format, subDays } from 'date-fns'
 import { z } from 'zod'
 import { Button } from '@/components/ui/button'
-import { ChevronRight, CalendarPlus } from 'lucide-react'
+import { ChevronRight, CalendarPlus, Plus } from 'lucide-react'
 import {
   Empty,
   EmptyContent,
@@ -169,6 +169,14 @@ function App() {
                 Below are the open sessions that you can vote for or join.
               </p>
             </div>
+            {isOrganizer && (
+              <Button asChild size="icon" variant="outline">
+                <Link to="/sessions/new">
+                  <Plus className="h-4 w-4" />
+                  <span className="sr-only">Create session</span>
+                </Link>
+              </Button>
+            )}
           </div>
           <div className="flex flex-col gap-4">
             {sessions.map((session) => {
@@ -182,7 +190,7 @@ function App() {
                   <div className="flex items-center justify-between p-6 border rounded-lg hover:bg-accent transition-colors">
                     <div className="flex-1">
                       <h2 className="text-lg font-semibold mb-2">
-                        {format(session.date, 'EEEE, MMMM do')}
+                        {format(session.date, 'EEE, MMM do')}
                       </h2>
                       <p className="text-muted-foreground mb-1">
                         {session.venueName}
@@ -190,7 +198,7 @@ function App() {
                       {session.votingClosesAt && (
                         <p className="text-sm text-muted-foreground">
                           Voting closes:{' '}
-                          {format(session.votingClosesAt, 'EEEE, MMMM do')} at{' '}
+                          {format(session.votingClosesAt, 'EEE, MMM do')} at{' '}
                           {format(session.votingClosesAt, 'ha')}
                         </p>
                       )}

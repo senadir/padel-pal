@@ -93,7 +93,7 @@ function MatchCard({ match, session }: { match: Match; session: Session }) {
 
   const startTime = format(new Date(match.slot.range[0]), 'HH:mm')
   const endTime = format(new Date(match.slot.range[1]), 'HH:mm')
-  const sessionDate = format(new Date(session.date), 'EEEE, MMMM do')
+  const sessionDate = format(new Date(session.date), 'EEE, MMM do')
 
   // Compute synced players with status
   const syncedPlayers: Array<MatchPlayer> = match.playtomicMatch
