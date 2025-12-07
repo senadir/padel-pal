@@ -226,11 +226,11 @@ max_frequency = "5s"
 "34603712987" = "000000"
 
 # Configure logged in session timeouts.
-# [auth.sessions]
-# Force log out after the specified duration.
-# timebox = "24h"
-# Force log out if the user has been inactive longer than the specified duration.
-# inactivity_timeout = "8h"
+[auth.sessions]
+# Force log out after the specified duration (1 year).
+timebox = "8760h"
+# Force log out if the user has been inactive longer than the specified duration (1 year).
+inactivity_timeout = "8760h"
 
 # This hook runs before a new user is created and allows developers to reject the request based on the incoming user object.
 # [auth.hook.before_user_created]
