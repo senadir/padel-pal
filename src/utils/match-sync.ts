@@ -59,6 +59,7 @@ export function computePlayerSyncStatus(
       phone: null,
       level: null,
       status: null,
+      is_blocked: false,
       created_at: new Date().toISOString(),
       syncStatus: 'only_playtomic',
       playtomicPaymentStatus: playtomicPlayer.payment_status,
