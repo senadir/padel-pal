@@ -149,47 +149,28 @@ function MatchCard({ match, session }: { match: Match; session: Session }) {
           </Badge>
         </div>
 
-        {/* Players list */}
-        <div className="space-y-2">
-          <p className="text-sm text-muted-foreground">
-            Players ({match.players.length}/4)
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {match.players.map((player) => (
+        {/* Players list - avatars only */}
+        <div className="flex items-center gap-1">
+          {match.players.map((player) => (
+            <Avatar key={player.id} className="size-8">
+              <AvatarImage
+                src={player.avatar || undefined}
+                alt={player.name || 'Player'}
+              />
+              <AvatarFallback className="text-xs">
+                {player.name?.charAt(0).toUpperCase() || 'P'}
+              </AvatarFallback>
+            </Avatar>
+          ))}
+          {/* Empty slots */}
+          {Array.from({ length: Math.max(0, 4 - match.players.length) }).map(
+            (_, i) => (
               <div
-                key={player.id}
-                className="flex items-center gap-2 bg-muted/50 rounded-full px-3 py-1"
-              >
-                <Avatar className="size-6">
-                  <AvatarImage
-                    src={player.avatar || undefined}
-                    alt={player.name || 'Player'}
-                  />
-                  <AvatarFallback className="text-xs">
-                    {player.name?.charAt(0).toUpperCase() || 'P'}
-                  </AvatarFallback>
-                </Avatar>
-                <span className="text-sm">{player.name || 'Unknown'}</span>
-                {match.booker?.playerId === player.id && (
-                  <Badge variant="secondary" className="text-xs px-1.5">
-                    Booker
-                  </Badge>
-                )}
-              </div>
-            ))}
-            {/* Empty slots */}
-            {Array.from({ length: Math.max(0, 4 - match.players.length) }).map(
-              (_, i) => (
-                <div
-                  key={`empty-${i}`}
-                  className="flex items-center gap-2 bg-muted/30 border border-dashed rounded-full px-3 py-1"
-                >
-                  <div className="size-6 rounded-full bg-muted" />
-                  <span className="text-sm text-muted-foreground">Empty</span>
-                </div>
-              ),
-            )}
-          </div>
+                key={`empty-${i}`}
+                className="size-8 rounded-full border border-dashed bg-muted/30"
+              />
+            ),
+          )}
         </div>
 
         {/* Booker selector */}
