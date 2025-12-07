@@ -9,7 +9,7 @@
     "deploy": "wrangler deploy",
     "cf-typegen": "wrangler types",
     "postinstall": "npm run cf-typegen",
-    "db-types": "supabase gen types typescript --project-id 'zsucxyqkpcovfejgjcxp' --schema public > src/utils/database.types.ts"
+    "db-types": "supabase gen types typescript --project-id 'efwzoawqeuwdelvdvfxz' --schema public > src/utils/database.types.ts"
   },
   "dependencies": {
     "@ariakit/react": "^0.4.19",

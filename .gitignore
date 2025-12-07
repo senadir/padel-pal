@@ -21,4 +21,4 @@ supabase/.temp
 
 # Tanstack Start related files
 src/routeTree.gen.tsdocs/
-.wrangler/state/v3/r2/
+.wrangler/state/v3/r2/supabase/seed.sql
