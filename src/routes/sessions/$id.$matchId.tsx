@@ -1,15 +1,30 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
-import { EllipsisVertical, ExternalLink, PlusIcon } from 'lucide-react'
+import {
+  Ban,
+  EllipsisVertical,
+  ExternalLink,
+  Loader2,
+  PlusIcon,
+  Search,
+  UserMinus,
+  UserPlus,
+} from 'lucide-react'
 import { useState } from 'react'
 import type { Match, Player } from '@/utils/types'
 import {
+  addPlayerToMatch,
   matchQueryOptions,
+  removePlayerFromMatch,
+  searchPlayers,
   sessionQueryOptions,
+  toggleBlockPlayer,
   useMatchActions,
 } from '@/utils/sessions'
-import { useAuth } from '@/contexts/auth'
+import { useAuth, useIsOrganizer } from '@/contexts/auth'
+import { Input } from '@/components/ui/input'
+import { useDebounce } from '@/hooks/use-debounce'
 import {
   DrawerDialog,
   DrawerDialogClose,
@@ -118,8 +133,14 @@ function MatchModalPendingComponent() {
 function MatchModalComponent() {
   const { id: sessionId, matchId } = Route.useParams()
   const navigate = useNavigate({ from: Route.fullPath })
+  const queryClient = useQueryClient()
   const { authData } = useAuth()
   const currentUser = authData?.player
+  const isOrganizer = useIsOrganizer()
+
+  const [showAddPlayer, setShowAddPlayer] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const debouncedSearch = useDebounce(searchQuery, 300)
 
   const { data: matches } = useQuery(matchQueryOptions(sessionId))
   const activeMatch = matches?.find((match) => match.id === matchId)
@@ -132,6 +153,38 @@ function MatchModalComponent() {
       sessionId,
       currentUserId: currentUser?.id ?? '',
     })
+
+  // Search players query
+  const { data: searchResults, isLoading: isSearching } = useQuery({
+    queryKey: ['players', 'search', debouncedSearch],
+    queryFn: () =>
+      searchPlayers({
+        data: {
+          query: debouncedSearch,
+          excludeIds: activeMatch?.players.map((p) => p.id) ?? [],
+        },
+      }),
+    enabled: debouncedSearch.length >= 1 && showAddPlayer,
+  })
+
+  // Add player mutation
+  const addPlayerMutation = useMutation({
+    mutationFn: (playerId: string) =>
+      addPlayerToMatch({ data: { matchPublicId: matchId, playerId } }),
+    onSuccess: () => {
+      toast.success('Player added to match')
+      queryClient.invalidateQueries({
+        queryKey: ['sessions', sessionId, 'matches'],
+      })
+      setShowAddPlayer(false)
+      setSearchQuery('')
+    },
+    onError: (error) => {
+      toast.error(
+        error instanceof Error ? error.message : 'Failed to add player',
+      )
+    },
+  })
 
   const handleClose = () => {
     navigate({ to: '/sessions/$id', params: { id: sessionId } })
@@ -167,6 +220,8 @@ function MatchModalComponent() {
   const gameIndex =
     matchesForSlotLevel.findIndex((m) => m.id === activeMatch.id) + 1
 
+  const hasEmptySlots = activeMatch.players.length < 4
+
   return (
     <DrawerDialog open={true} setOpen={(open) => !open && handleClose()}>
       <DrawerDialogContent>
@@ -185,12 +240,14 @@ function MatchModalComponent() {
               key={player.id}
               player={player}
               match={activeMatch}
+              sessionId={sessionId}
               currentUser={currentUser}
+              isOrganizer={isOrganizer}
               onLeaveMatch={handleLeaveMatch}
               isLoading={isMatchActionLoading}
             />
           ))}
-          {activeMatch.players.length < 4 &&
+          {hasEmptySlots && !showAddPlayer &&
             Array.from({
               length: 4 - activeMatch.players.length,
             }).map((_, i) => (
@@ -212,6 +269,88 @@ function MatchModalComponent() {
                 </span>
               </Button>
             ))}
+
+          {/* Add Player UI for organizers */}
+          {isOrganizer && hasEmptySlots && (
+            <>
+              {showAddPlayer ? (
+                <div className="space-y-3 border rounded-lg p-3">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search by name or phone..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="pl-9"
+                      autoFocus
+                    />
+                  </div>
+                  <div className="max-h-48 overflow-y-auto space-y-1">
+                    {isSearching && (
+                      <div className="flex items-center justify-center py-4">
+                        <Loader2 className="size-4 animate-spin" />
+                      </div>
+                    )}
+                    {!isSearching && searchResults?.length === 0 && debouncedSearch && (
+                      <p className="text-sm text-muted-foreground text-center py-4">
+                        No players found
+                      </p>
+                    )}
+                    {searchResults?.map((player) => (
+                      <button
+                        key={player.id}
+                        type="button"
+                        className="flex items-center gap-3 w-full p-2 rounded-md hover:bg-accent transition-colors"
+                        onClick={() => addPlayerMutation.mutate(player.id)}
+                        disabled={addPlayerMutation.isPending}
+                      >
+                        <Avatar className="size-8">
+                          <AvatarImage
+                            src={player.avatar ?? undefined}
+                            alt={player.name ?? undefined}
+                          />
+                          <AvatarFallback>
+                            {player.name?.charAt(0) || '?'}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1 text-left">
+                          <div className="text-sm font-medium">
+                            {player.name}
+                          </div>
+                          {player.phone && (
+                            <div className="text-xs text-muted-foreground">
+                              {player.phone}
+                            </div>
+                          )}
+                        </div>
+                        <UserPlus className="size-4 text-muted-foreground" />
+                      </button>
+                    ))}
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full"
+                    onClick={() => {
+                      setShowAddPlayer(false)
+                      setSearchQuery('')
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => setShowAddPlayer(true)}
+                >
+                  <UserPlus className="size-4 mr-2" />
+                  Add a player
+                </Button>
+              )}
+            </>
+          )}
         </div>
         <DrawerDialogFooter>
           <DrawerDialogClose asChild>
@@ -233,13 +372,17 @@ function MatchModalComponent() {
 const MatchPlayerListItem = ({
   player,
   match: currentMatch,
+  sessionId,
   currentUser,
+  isOrganizer,
   onLeaveMatch,
   isLoading,
 }: {
   player: Match['players'][number]
   match: Match
+  sessionId: string
   currentUser: Player | null | undefined
+  isOrganizer: boolean
   onLeaveMatch: () => void
   isLoading: boolean
 }) => {
@@ -277,9 +420,13 @@ const MatchPlayerListItem = ({
           {playerDialogOpen && (
             <MatchPlayerOptionDialog
               player={player}
+              matchId={currentMatch.id}
+              sessionId={sessionId}
               isCurrentUser={isCurrentUser}
+              isOrganizer={isOrganizer}
               onLeaveMatch={onLeaveMatch}
               isLoading={isLoading}
+              onClose={() => setPlayerDialogOpen(false)}
             />
           )}
         </DropdownMenu>
@@ -290,15 +437,58 @@ const MatchPlayerListItem = ({
 
 const MatchPlayerOptionDialog = ({
   player,
+  matchId,
+  sessionId,
   isCurrentUser,
+  isOrganizer,
   onLeaveMatch,
   isLoading,
+  onClose,
 }: {
   player: Match['players'][number]
+  matchId: string
+  sessionId: string
   isCurrentUser: boolean
+  isOrganizer: boolean
   onLeaveMatch: () => void
   isLoading: boolean
+  onClose: () => void
 }) => {
+  const queryClient = useQueryClient()
+
+  // Remove player from match mutation (organizer only)
+  const removePlayerMutation = useMutation({
+    mutationFn: () =>
+      removePlayerFromMatch({ data: { matchPublicId: matchId, playerId: player.id } }),
+    onSuccess: () => {
+      toast.success(`${player.name} removed from match`)
+      queryClient.invalidateQueries({
+        queryKey: ['sessions', sessionId, 'matches'],
+      })
+      onClose()
+    },
+    onError: (error) => {
+      toast.error(
+        error instanceof Error ? error.message : 'Failed to remove player',
+      )
+    },
+  })
+
+  // Block player mutation (organizer only)
+  const blockPlayerMutation = useMutation({
+    mutationFn: () =>
+      toggleBlockPlayer({ data: { playerId: player.id, isBlocked: true } }),
+    onSuccess: () => {
+      toast.success(`${player.name} has been blocked`)
+      onClose()
+    },
+    onError: (error) => {
+      toast.error(
+        error instanceof Error ? error.message : 'Failed to block player',
+      )
+    },
+  })
+
   const handleCopyNumber = async () => {
     if (!player.phone) {
       toast.error('No phone number available')
@@ -308,11 +498,14 @@ const MatchPlayerOptionDialog = ({
     toast.success('Phone number copied')
   }
 
+  const isActionPending =
+    isLoading || removePlayerMutation.isPending || blockPlayerMutation.isPending
+
   return (
     <DropdownMenuContent className="w-56" align="end">
       {isCurrentUser && (
         <>
-          <DropdownMenuItem onClick={onLeaveMatch} disabled={isLoading}>
+          <DropdownMenuItem onClick={onLeaveMatch} disabled={isActionPending}>
             Leave match
           </DropdownMenuItem>
           <DropdownMenuSeparator />
@@ -344,6 +537,29 @@ const MatchPlayerOptionDialog = ({
             <ExternalLink className="ml-auto h-3 w-3" />
           </a>
         </DropdownMenuItem>
+      )}
+
+      {/* Organizer-only options */}
+      {isOrganizer && !isCurrentUser && (
+        <>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onClick={() => removePlayerMutation.mutate()}
+            disabled={isActionPending}
+            className="text-destructive focus:text-destructive"
+          >
+            <UserMinus className="mr-2 h-4 w-4" />
+            Remove from match
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => blockPlayerMutation.mutate()}
+            disabled={isActionPending}
+            className="text-destructive focus:text-destructive"
+          >
+            <Ban className="mr-2 h-4 w-4" />
+            Block player
+          </DropdownMenuItem>
+        </>
       )}
     </DropdownMenuContent>
   )

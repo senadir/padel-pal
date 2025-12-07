@@ -820,6 +820,220 @@ export const unjoinMatch = createServerFn({ method: 'POST' })
     }),
   )
 
+// Block/unblock a player (organizer only)
+export const toggleBlockPlayer = createServerFn({ method: 'POST' })
+  .inputValidator(
+    zodValidator(
+      z.object({
+        playerId: z.string(),
+        isBlocked: z.boolean(),
+      }),
+    ),
+  )
+  .handler(
+    withSentry(async ({ data }) => {
+      const supabase = getSupabaseServerClient()
+
+      const { error } = await supabase
+        .from('players')
+        .update({ is_blocked: data.isBlocked })
+        .eq('id', data.playerId)
+
+      if (error) {
+        console.error('Error toggling block status:', error)
+        throw new Error(`Failed to ${data.isBlocked ? 'block' : 'unblock'} player`)
+      }
+
+      return { success: true }
+    }),
+  )
+
+// Remove a player from a match (organizer only)
+export const removePlayerFromMatch = createServerFn({ method: 'POST' })
+  .inputValidator(
+    zodValidator(
+      z.object({
+        matchPublicId: z.string(),
+        playerId: z.string(),
+      }),
+    ),
+  )
+  .handler(
+    withSentry(async ({ data }) => {
+      const supabase = getSupabaseServerClient()
+
+      // Get match by public_id
+      const { data: matchRow, error: matchError } = await supabase
+        .from('matches')
+        .select('id, booker_id, session_id')
+        .eq('public_id', data.matchPublicId)
+        .single()
+
+      if (matchError || !matchRow) {
+        throw new Error('Match not found')
+      }
+
+      // Get participant to check if they're the booker
+      const { data: participantRow, error: participantError } = await supabase
+        .from('match_participants')
+        .select('id')
+        .eq('match_id', matchRow.id)
+        .eq('player_id', data.playerId)
+        .single()
+
+      if (participantError || !participantRow) {
+        throw new Error('Player not in this match')
+      }
+
+      const removingParticipantId = participantRow.id
+      const isRemovingBooker = matchRow.booker_id === removingParticipantId
+
+      // Delete the participant
+      const { error } = await supabase
+        .from('match_participants')
+        .delete()
+        .eq('match_id', matchRow.id)
+        .eq('player_id', data.playerId)
+
+      if (error) {
+        console.error('Error removing player from match:', error)
+        throw new Error(`Failed to remove player: ${error.message}`)
+      }
+
+      // If the removed player was the booker, reassign to another participant
+      if (isRemovingBooker) {
+        const newBookerId = await selectBestBooker(
+          supabase,
+          matchRow.id,
+          matchRow.session_id,
+        )
+
+        const { error: updateError } = await supabase
+          .from('matches')
+          .update({ booker_id: newBookerId })
+          .eq('id', matchRow.id)
+
+        if (updateError) {
+          console.error('Error reassigning booker:', updateError)
+        }
+      }
+
+      return { success: true }
+    }),
+  )
+
+// Search players by name or phone (fuzzy search)
+export const searchPlayers = createServerFn({ method: 'GET' })
+  .inputValidator(
+    zodValidator(
+      z.object({
+        query: z.string().min(1),
+        excludeIds: z.array(z.string()).optional(),
+      }),
+    ),
+  )
+  .handler(
+    withSentry(async ({ data }) => {
+      const supabase = getSupabaseServerClient()
+
+      // Search by name (case-insensitive, partial match) or phone
+      let query = supabase
+        .from('players')
+        .select('id, name, phone, avatar, level, playtomic_id, is_blocked')
+        .eq('is_blocked', false)
+        .or(`name.ilike.%${data.query}%,phone.ilike.%${data.query}%`)
+        .limit(10)
+
+      if (data.excludeIds && data.excludeIds.length > 0) {
+        query = query.not('id', 'in', `(${data.excludeIds.join(',')})`)
+      }
+
+      const { data: players, error } = await query
+
+      if (error) {
+        console.error('Error searching players:', error)
+        throw new Error('Failed to search players')
+      }
+
+      return players ?? []
+    }),
+  )
+
+// Add a player to a match (organizer only)
+export const addPlayerToMatch = createServerFn({ method: 'POST' })
+  .inputValidator(
+    zodValidator(
+      z.object({
+        matchPublicId: z.string(),
+        playerId: z.string(),
+      }),
+    ),
+  )
+  .handler(
+    withSentry(async ({ data }) => {
+      const supabase = getSupabaseServerClient()
+
+      // Get match by public_id
+      const { data: matchRow, error: matchError } = await supabase
+        .from('matches')
+        .select('id, max_players, session_id')
+        .eq('public_id', data.matchPublicId)
+        .single()
+
+      if (matchError || !matchRow) {
+        throw new Error('Match not found')
+      }
+
+      // Check current player count
+      const { count, error: countError } = await supabase
+        .from('match_participants')
+        .select('*', { count: 'exact', head: true })
+        .eq('match_id', matchRow.id)
+
+      if (countError) {
+        throw new Error('Failed to check match capacity')
+      }
+
+      if ((count ?? 0) >= matchRow.max_players) {
+        throw new Error('Match is full')
+      }
+
+      // Check if player is blocked
+      const { data: playerRow, error: playerError } = await supabase
+        .from('players')
+        .select('is_blocked')
+        .eq('id', data.playerId)
+        .single()
+
+      if (playerError || !playerRow) {
+        throw new Error('Player not found')
+      }
+
+      if (playerRow.is_blocked) {
+        throw new Error('Player is blocked')
+      }
+
+      // Add participant
+      const { error: insertError } = await supabase
+        .from('match_participants')
+        .insert({
+          match_id: matchRow.id,
+          player_id: data.playerId,
+          source: 'organizer',
+        })
+
+      if (insertError) {
+        if (insertError.code === '23505') {
+          throw new Error('Player is already in this match')
+        }
+        console.error('Error adding player to match:', insertError)
+        throw new Error(`Failed to add player: ${insertError.message}`)
+      }
+
+      return { success: true }
+    }),
+  )
+
 // Helper function to generate matches from voting results
 async function generateMatchesHelper(sessionPublicId: string) {
   const supabase = getSupabaseServerClient()
