@@ -153,14 +153,11 @@ function App() {
             </EmptyDescription>
           </EmptyHeader>
           <EmptyContent>
-            <div className="flex gap-2">
-              {isOrganizer && (
-                <Button asChild>
-                  <Link to="/sessions/new">Create Session</Link>
-                </Button>
-              )}
-              <Button variant="outline">Get updated</Button>
-            </div>
+            {isOrganizer && (
+              <Button asChild>
+                <Link to="/sessions/new">Create Session</Link>
+              </Button>
+            )}
           </EmptyContent>
         </Empty>
       ) : (
