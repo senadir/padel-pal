@@ -249,6 +249,77 @@ export const sessionsQueryOptions = () =>
     queryFn: () => fetchSessions(),
   })
 
+export const fetchUserParticipation = createServerFn({ method: 'GET' })
+  .inputValidator((playerId: string) => playerId)
+  .handler(
+    withSentry(async ({ data: playerId }) => {
+      try {
+        const supabase = getSupabaseServerClient()
+
+        // Fetch all votes by this player with session info
+        const { data: votesData, error: votesError } = await supabase
+          .from('session_votes')
+          .select('session_id, sessions!inner(public_id)')
+          .eq('player_id', playerId)
+
+        if (votesError) {
+          console.error('Error fetching votes:', votesError)
+        }
+
+        // Fetch all match participations by this player with session info
+        // Use explicit FK reference to avoid ambiguity with booker_id relationship
+        const { data: participationsData, error: participationsError } =
+          await supabase
+            .from('match_participants')
+            .select('match_id, matches!match_participants_match_id_fkey(session_id, sessions!inner(public_id))')
+            .eq('player_id', playerId)
+
+        if (participationsError) {
+          console.error('Error fetching participations:', participationsError)
+        }
+
+        // Build sets of session public_ids where user has voted or joined
+        const votedSessionIds = new Set<string>()
+        const joinedSessionIds = new Set<string>()
+
+        votesData?.forEach((vote) => {
+          const sessions = vote.sessions as { public_id: string } | null
+          if (sessions?.public_id) {
+            votedSessionIds.add(sessions.public_id)
+          }
+        })
+
+        participationsData?.forEach((participation) => {
+          const matches = participation.matches as {
+            session_id: number
+            sessions: { public_id: string }
+          } | null
+          if (matches?.sessions?.public_id) {
+            joinedSessionIds.add(matches.sessions.public_id)
+          }
+        })
+
+        return {
+          votedSessionIds: Array.from(votedSessionIds),
+          joinedSessionIds: Array.from(joinedSessionIds),
+        }
+      } catch (err) {
+        console.error('Error in fetchUserParticipation:', err)
+        return { votedSessionIds: [], joinedSessionIds: [] }
+      }
+    }),
+  )
+
+export const userParticipationQueryOptions = (playerId: string | undefined) =>
+  queryOptions({
+    queryKey: ['sessions', 'participation', playerId],
+    queryFn: () =>
+      playerId
+        ? fetchUserParticipation({ data: playerId })
+        : Promise.resolve({ votedSessionIds: [], joinedSessionIds: [] }),
+    enabled: !!playerId,
+  })
+
 export const fetchSession = createServerFn({ method: 'GET' })
   .inputValidator((d: string) => d)
   .handler(
@@ -782,7 +853,7 @@ export const unjoinMatch = createServerFn({ method: 'POST' })
     }),
   )
 
-// Update booker for a match
+// Update booker for a match (organizer only)
 export const updateMatchBooker = createServerFn({ method: 'POST' })
   .inputValidator(
     zodValidator(
@@ -795,6 +866,27 @@ export const updateMatchBooker = createServerFn({ method: 'POST' })
   .handler(
     withSentry(async ({ data }) => {
       const supabase = getSupabaseServerClient()
+
+      // Get current user and verify organizer role
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+
+      if (!user) {
+        throw new Error('User not authenticated')
+      }
+
+      // Check if user is organizer
+      const { data: userRoles } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', user.id)
+        .eq('role', 'organizer')
+        .single()
+
+      if (!userRoles) {
+        throw new Error('Only organizers can update match bookers')
+      }
 
       // Get match ID from public_id
       const { data: matchRow, error: matchError } = await supabase

@@ -18,6 +18,7 @@ import { Route as LoginPlaytomicRouteImport } from './routes/login/playtomic'
 import { Route as LoginOtpRouteImport } from './routes/login/otp'
 import { Route as ApiWhatsappWebhookRouteImport } from './routes/api/whatsapp-webhook'
 import { Route as ApiOgRouteImport } from './routes/api/og'
+import { Route as ApiNotifyBookerRouteImport } from './routes/api/notify-booker'
 import { Route as ShareMatchIdRouteImport } from './routes/share/match.$id'
 import { Route as SessionsIdMatchIdRouteImport } from './routes/sessions/$id.$matchId'
 import { Route as ApiSyncMatchPublicMatchIdRouteImport } from './routes/api/sync-match.$publicMatchId'
@@ -67,6 +68,11 @@ const ApiOgRoute = ApiOgRouteImport.update({
   path: '/api/og',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiNotifyBookerRoute = ApiNotifyBookerRouteImport.update({
+  id: '/api/notify-booker',
+  path: '/api/notify-booker',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ShareMatchIdRoute = ShareMatchIdRouteImport.update({
   id: '/share/match/$id',
   path: '/share/match/$id',
@@ -87,6 +93,7 @@ const ApiSyncMatchPublicMatchIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/logout': typeof LogoutRoute
+  '/api/notify-booker': typeof ApiNotifyBookerRoute
   '/api/og': typeof ApiOgRoute
   '/api/whatsapp-webhook': typeof ApiWhatsappWebhookRoute
   '/login/otp': typeof LoginOtpRoute
@@ -101,6 +108,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/logout': typeof LogoutRoute
+  '/api/notify-booker': typeof ApiNotifyBookerRoute
   '/api/og': typeof ApiOgRoute
   '/api/whatsapp-webhook': typeof ApiWhatsappWebhookRoute
   '/login/otp': typeof LoginOtpRoute
@@ -116,6 +124,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/logout': typeof LogoutRoute
+  '/api/notify-booker': typeof ApiNotifyBookerRoute
   '/api/og': typeof ApiOgRoute
   '/api/whatsapp-webhook': typeof ApiWhatsappWebhookRoute
   '/login/otp': typeof LoginOtpRoute
@@ -132,6 +141,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/logout'
+    | '/api/notify-booker'
     | '/api/og'
     | '/api/whatsapp-webhook'
     | '/login/otp'
@@ -146,6 +156,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/logout'
+    | '/api/notify-booker'
     | '/api/og'
     | '/api/whatsapp-webhook'
     | '/login/otp'
@@ -160,6 +171,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/logout'
+    | '/api/notify-booker'
     | '/api/og'
     | '/api/whatsapp-webhook'
     | '/login/otp'
@@ -175,6 +187,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LogoutRoute: typeof LogoutRoute
+  ApiNotifyBookerRoute: typeof ApiNotifyBookerRoute
   ApiOgRoute: typeof ApiOgRoute
   ApiWhatsappWebhookRoute: typeof ApiWhatsappWebhookRoute
   LoginOtpRoute: typeof LoginOtpRoute
@@ -251,6 +264,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiOgRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/notify-booker': {
+      id: '/api/notify-booker'
+      path: '/api/notify-booker'
+      fullPath: '/api/notify-booker'
+      preLoaderRoute: typeof ApiNotifyBookerRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/share/match/$id': {
       id: '/share/match/$id'
       path: '/share/match/$id'
@@ -290,6 +310,7 @@ const SessionsIdRouteWithChildren = SessionsIdRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LogoutRoute: LogoutRoute,
+  ApiNotifyBookerRoute: ApiNotifyBookerRoute,
   ApiOgRoute: ApiOgRoute,
   ApiWhatsappWebhookRoute: ApiWhatsappWebhookRoute,
   LoginOtpRoute: LoginOtpRoute,

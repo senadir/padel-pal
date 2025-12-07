@@ -6,12 +6,24 @@
  * - TWILIO_ACCOUNT_SID
  * - TWILIO_AUTH_TOKEN
  * - TWILIO_WHATSAPP_FROM (WhatsApp sender number, e.g., whatsapp:+14155238886)
+ * - TWILIO_BOOKER_TEMPLATE_SID (optional, defaults to hardcoded value)
  */
 
 import Twilio from 'twilio'
 
-// Template SID for booker notification
-const BOOKER_NOTIFICATION_TEMPLATE_SID = 'HX1e8b8d2770a4bdba14ae846e6ad87b2b'
+// Template SID for booker notification (configurable via env var)
+const BOOKER_NOTIFICATION_TEMPLATE_SID =
+  process.env.TWILIO_BOOKER_TEMPLATE_SID || 'HX1e8b8d2770a4bdba14ae846e6ad87b2b'
+
+// E.164 format: + followed by 1-15 digits
+const E164_REGEX = /^\+[1-9]\d{1,14}$/
+
+/**
+ * Validates phone number is in E.164 format
+ */
+function isValidE164(phone: string): boolean {
+  return E164_REGEX.test(phone)
+}
 
 interface SendBookerNotificationParams {
   toPhone: string // Phone number in E.164 format (e.g., +34612345678)
@@ -42,6 +54,14 @@ function getTwilioClient() {
 export async function sendBookerNotification(
   params: SendBookerNotificationParams,
 ): Promise<{ success: boolean; messageSid?: string; error?: string }> {
+  // Validate phone number format
+  if (!isValidE164(params.toPhone)) {
+    return {
+      success: false,
+      error: `Invalid phone number format: ${params.toPhone}. Expected E.164 format (e.g., +34612345678)`,
+    }
+  }
+
   const client = getTwilioClient()
   const fromNumber = process.env.TWILIO_WHATSAPP_FROM
 
@@ -82,27 +102,4 @@ export async function sendBookerNotification(
       error: error instanceof Error ? error.message : 'Unknown error',
     }
   }
-}
-
-/**
- * Sends booker notifications to multiple players
- *
- * @param notifications - Array of notification params to send
- * @returns Promise resolving to array of results
- */
-export async function sendBookerNotifications(
-  notifications: SendBookerNotificationParams[],
-): Promise<Array<{ toPhone: string; success: boolean; error?: string }>> {
-  const results = await Promise.all(
-    notifications.map(async (notification) => {
-      const result = await sendBookerNotification(notification)
-      return {
-        toPhone: notification.toPhone,
-        success: result.success,
-        error: result.error,
-      }
-    }),
-  )
-
-  return results
 }

@@ -233,31 +233,31 @@ function MatchCard({ match, session }: { match: Match; session: Session }) {
             <DropdownMenuContent align="end">
               <DropdownMenuLabel>Select Booker</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              {match.players.map((player) => (
-                <DropdownMenuItem
-                  key={player.id}
-                  onClick={() => {
-                    if (player.participantId) {
-                      updateBookerMutation.mutate(player.participantId)
-                    }
-                  }}
-                  className="gap-2"
-                >
-                  <Avatar className="size-5">
-                    <AvatarImage
-                      src={player.avatar || undefined}
-                      alt={player.name || 'Player'}
-                    />
-                    <AvatarFallback className="text-xs">
-                      {player.name?.charAt(0).toUpperCase() || 'P'}
-                    </AvatarFallback>
-                  </Avatar>
-                  <span className="flex-1">{player.name || 'Unknown'}</span>
-                  {match.booker?.playerId === player.id && (
-                    <Check className="h-4 w-4" />
-                  )}
-                </DropdownMenuItem>
-              ))}
+              {match.players
+                .filter((player) => player.participantId != null)
+                .map((player) => (
+                  <DropdownMenuItem
+                    key={player.id}
+                    onClick={() => {
+                      updateBookerMutation.mutate(player.participantId!)
+                    }}
+                    className="gap-2"
+                  >
+                    <Avatar className="size-5">
+                      <AvatarImage
+                        src={player.avatar || undefined}
+                        alt={player.name || 'Player'}
+                      />
+                      <AvatarFallback className="text-xs">
+                        {player.name?.charAt(0).toUpperCase() || 'P'}
+                      </AvatarFallback>
+                    </Avatar>
+                    <span className="flex-1">{player.name || 'Unknown'}</span>
+                    {match.booker?.playerId === player.id && (
+                      <Check className="h-4 w-4" />
+                    )}
+                  </DropdownMenuItem>
+                ))}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

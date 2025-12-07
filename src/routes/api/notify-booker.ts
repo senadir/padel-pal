@@ -1,7 +1,8 @@
-import { createAPIFileRoute } from '@tanstack/react-start/api'
-import { createClient } from '@supabase/supabase-js'
+import { createFileRoute } from '@tanstack/react-router'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { format } from 'date-fns'
 import { sendBookerNotification } from '@/utils/twilio'
+import type { Database } from '@/utils/database.types'
 
 /**
  * Webhook endpoint for sending booker notifications.
@@ -23,57 +24,6 @@ import { sendBookerNotification } from '@/utils/twilio'
  * 2. Create webhook for 'sessions' table on UPDATE, filter: status = 'open'
  * 3. Create webhook for 'matches' table on UPDATE, when booker_id changes
  */
-export const APIRoute = createAPIFileRoute('/api/notify-booker')({
-  POST: async ({ request }) => {
-    try {
-      // Verify the request is from Supabase using webhook secret
-      const authHeader = request.headers.get('Authorization')
-      const expectedSecret = process.env.SUPABASE_WEBHOOK_SECRET
-
-      if (expectedSecret && authHeader !== `Bearer ${expectedSecret}`) {
-        console.error('Unauthorized webhook request')
-        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-          status: 401,
-          headers: { 'Content-Type': 'application/json' },
-        })
-      }
-
-      const payload = await request.json()
-      console.log('Received Supabase webhook:', JSON.stringify(payload, null, 2))
-
-      // Create Supabase client with service role for full access
-      const supabase = createClient(
-        process.env.VITE_SUPABASE_URL!,
-        process.env.SUPABASE_PRIVATE_KEY!,
-      )
-
-      // Handle based on table
-      if (payload.table === 'sessions') {
-        await handleSessionWebhook(supabase, payload)
-      } else if (payload.table === 'matches') {
-        await handleMatchWebhook(supabase, payload)
-      } else {
-        console.log('Ignoring webhook for table:', payload.table)
-      }
-
-      return new Response(JSON.stringify({ success: true }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      })
-    } catch (error) {
-      console.error('Error processing webhook:', error)
-      return new Response(
-        JSON.stringify({
-          error: error instanceof Error ? error.message : 'Unknown error',
-        }),
-        {
-          status: 500,
-          headers: { 'Content-Type': 'application/json' },
-        },
-      )
-    }
-  },
-})
 
 interface SupabaseWebhookPayload {
   type: 'INSERT' | 'UPDATE' | 'DELETE'
@@ -83,11 +33,83 @@ interface SupabaseWebhookPayload {
   old_record?: Record<string, unknown>
 }
 
+export const Route = createFileRoute('/api/notify-booker')({
+  server: {
+    handlers: {
+      POST: async ({ request }: { request: Request }) => {
+        try {
+          // Verify the request is from Supabase using webhook secret
+          // Fail closed: reject all requests if secret is not configured
+          const authHeader = request.headers.get('Authorization')
+          const expectedSecret = process.env.SUPABASE_WEBHOOK_SECRET
+
+          if (!expectedSecret) {
+            console.error('Webhook secret not configured - rejecting request')
+            return new Response(
+              JSON.stringify({ error: 'Webhook not configured' }),
+              {
+                status: 500,
+                headers: { 'Content-Type': 'application/json' },
+              },
+            )
+          }
+
+          if (authHeader !== `Bearer ${expectedSecret}`) {
+            console.error('Unauthorized webhook request')
+            return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+              status: 401,
+              headers: { 'Content-Type': 'application/json' },
+            })
+          }
+
+          const payload = (await request.json()) as SupabaseWebhookPayload
+          console.log('Received Supabase webhook:', payload.table, payload.type)
+
+          // Create Supabase client with service role for full access
+          const supabaseUrl = process.env.SUPABASE_URL
+          const supabaseKey = process.env.SUPABASE_PRIVATE_KEY
+
+          if (!supabaseUrl || !supabaseKey) {
+            throw new Error('Supabase configuration missing')
+          }
+
+          const supabase = createClient<Database>(supabaseUrl, supabaseKey)
+
+          // Handle based on table
+          if (payload.table === 'sessions') {
+            await handleSessionWebhook(supabase, payload)
+          } else if (payload.table === 'matches') {
+            await handleMatchWebhook(supabase, payload)
+          } else {
+            console.log('Ignoring webhook for table:', payload.table)
+          }
+
+          return new Response(JSON.stringify({ success: true }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        } catch (error) {
+          console.error('Error processing webhook:', error)
+          return new Response(
+            JSON.stringify({
+              error: error instanceof Error ? error.message : 'Unknown error',
+            }),
+            {
+              status: 500,
+              headers: { 'Content-Type': 'application/json' },
+            },
+          )
+        }
+      },
+    },
+  },
+})
+
 /**
  * Handle session table webhooks - notify bookers when session opens
  */
 async function handleSessionWebhook(
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseClient<Database>,
   payload: SupabaseWebhookPayload,
 ) {
   // Only process UPDATE events where status changed to 'open'
@@ -125,15 +147,16 @@ async function handleSessionWebhook(
     .not('booker_id', 'is', null)
 
   if (matchesError || !matches) {
-    console.error('Error fetching matches:', matchesError)
-    return
+    throw new Error(
+      `Failed to fetch matches: ${matchesError?.message || 'No matches found'}`,
+    )
   }
 
   // Send notifications to each unique booker
   const sentToPhones = new Set<string>()
 
   for (const match of matches) {
-    const booker = match.booker as {
+    const booker = match.booker as unknown as {
       player_id: string
       players: { phone: string | null; name: string | null } | null
     } | null
@@ -184,7 +207,7 @@ async function handleSessionWebhook(
  * Handle match table webhooks - notify new booker when assigned
  */
 async function handleMatchWebhook(
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseClient<Database>,
   payload: SupabaseWebhookPayload,
 ) {
   // Only process UPDATE events where booker_id changed
@@ -199,7 +222,6 @@ async function handleMatchWebhook(
     return
   }
 
-  const matchId = payload.record.id as number
   const sessionId = payload.record.session_id as number
   const startTime = payload.record.start_time as string
 
@@ -211,8 +233,9 @@ async function handleMatchWebhook(
     .single()
 
   if (sessionError || !session) {
-    console.error('Error fetching session:', sessionError)
-    return
+    throw new Error(
+      `Failed to fetch session: ${sessionError?.message || 'Session not found'}`,
+    )
   }
 
   // Only send notification if session is open
@@ -231,11 +254,12 @@ async function handleMatchWebhook(
     .single()
 
   if (participantError || !participant) {
-    console.error('Error fetching participant:', participantError)
-    return
+    throw new Error(
+      `Failed to fetch participant: ${participantError?.message || 'Participant not found'}`,
+    )
   }
 
-  const player = participant.players as {
+  const player = participant.players as unknown as {
     phone: string | null
     name: string | null
   } | null
