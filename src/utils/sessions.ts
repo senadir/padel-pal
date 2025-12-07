@@ -943,19 +943,31 @@ export const useVoteForSession = ({ sessionId }: { sessionId: string }) => {
   const queryClient = useQueryClient()
 
   const { mutate: voteForSession } = useMutation({
+    // Use mutation key to allow cancellation of previous in-flight mutations
+    mutationKey: ['vote', sessionId],
     mutationFn: async ({
       timeSlot,
       level,
-      session,
       currentUser: user,
     }: {
       timeSlot: string
       level: string
-      session: Session
+      session: Session // Still passed for optimistic update, but we read fresh data for server calls
       currentUser: Player
     }): Promise<void> => {
+      // Read fresh session data from cache to get the latest state
+      // This ensures we see any optimistic updates from rapid clicks
+      const freshSession = queryClient.getQueryData<Session>([
+        'sessions',
+        sessionId,
+      ])
+
+      if (!freshSession) {
+        throw new Error('Session not found')
+      }
+
       // Find the option for this time slot + level combination
-      const slot = session.timeSlots.find((ts) => ts.id === timeSlot)
+      const slot = freshSession.timeSlots.find((ts) => ts.id === timeSlot)
       const option = slot?.options.find((o) => o.level === level)
 
       if (!option) {
@@ -963,6 +975,7 @@ export const useVoteForSession = ({ sessionId }: { sessionId: string }) => {
       }
 
       // Check if user already voted for this option (toggle behavior)
+      // Use fresh data to see current state after optimistic updates
       const alreadyVoted = option.players.some(
         (player) => player.id === user.id,
       )
@@ -977,18 +990,25 @@ export const useVoteForSession = ({ sessionId }: { sessionId: string }) => {
           },
         })
       } else {
-        // Remove votes from other levels in same time slot first
-        const otherOptionsInSlot =
-          slot?.options.filter((o) => o.level !== level) || []
-        const unvotePromises = otherOptionsInSlot
-          .filter((otherOption) =>
-            otherOption.players.some((p) => p.id === user.id),
-          )
-          .map((otherOption) =>
+        // Remove ALL votes from this user in ALL time slots first
+        // This prevents the race condition where rapid clicks could leave orphan votes
+        const allUserVotes: Array<{ optionId: string }> = []
+        for (const ts of freshSession.timeSlots) {
+          for (const opt of ts.options) {
+            if (opt.players.some((p) => p.id === user.id)) {
+              allUserVotes.push({ optionId: opt.id })
+            }
+          }
+        }
+
+        // Remove all existing votes (except the one we're about to add)
+        const unvotePromises = allUserVotes
+          .filter((v) => v.optionId !== option.id)
+          .map((v) =>
             unvoteForOption({
               data: {
                 sessionPublicId: sessionId,
-                optionId: otherOption.id,
+                optionId: v.optionId,
                 playerId: user.id,
               },
             }),
