@@ -1,11 +1,14 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { format } from 'date-fns'
-import { ExternalLink, PlusIcon, EllipsisVertical } from 'lucide-react'
+import { EllipsisVertical, ExternalLink, PlusIcon } from 'lucide-react'
 import { useState } from 'react'
 import type { Match, Player } from '@/utils/types'
-import { matchQueryOptions, useMatchActions } from '@/utils/sessions'
-import { sessionQueryOptions } from './$id'
+import {
+  matchQueryOptions,
+  sessionQueryOptions,
+  useMatchActions,
+} from '@/utils/sessions'
 import { useAuth } from '@/contexts/auth'
 import {
   DrawerDialog,
@@ -21,15 +24,11 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuGroup,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
-  DropdownMenuShortcut,
-  DropdownMenuSub,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { toast } from 'sonner'
 import { Skeleton } from '@/components/ui/skeleton'
 
 export const Route = createFileRoute('/sessions/$id/$matchId')({
@@ -53,10 +52,16 @@ export const Route = createFileRoute('/sessions/$id/$matchId')({
         meta: [
           { title: 'Match | Padel Pal' },
           { property: 'og:title', content: 'Match | Padel Pal' },
-          { property: 'og:description', content: 'View match details and players.' },
+          {
+            property: 'og:description',
+            content: 'View match details and players.',
+          },
           { property: 'og:image', content: '/api/og' },
           { name: 'twitter:title', content: 'Match | Padel Pal' },
-          { name: 'twitter:description', content: 'View match details and players.' },
+          {
+            name: 'twitter:description',
+            content: 'View match details and players.',
+          },
           { name: 'twitter:image', content: '/api/og' },
         ],
       }
@@ -132,13 +137,23 @@ function MatchModalComponent() {
     navigate({ to: '/sessions/$id', params: { id: sessionId } })
   }
 
+  const returnUrl = `/sessions/${sessionId}/matches/${matchId}`
+
   const handleJoinMatch = () => {
-    if (!activeMatch || !currentUser?.id) return
+    if (!activeMatch) return
+    if (!currentUser?.id) {
+      navigate({ to: '/login', replace: true, search: { redirect: returnUrl } })
+      return
+    }
     toggleMatchParticipation(activeMatch.id, false)
   }
 
   const handleLeaveMatch = () => {
-    if (!activeMatch || !currentUser?.id) return
+    if (!activeMatch) return
+    if (!currentUser?.id) {
+      navigate({ to: '/login', replace: true, search: { redirect: returnUrl } })
+      return
+    }
     toggleMatchParticipation(activeMatch.id, true)
   }
 
@@ -157,9 +172,8 @@ function MatchModalComponent() {
       <DrawerDialogContent>
         <DrawerDialogHeader>
           <DrawerDialogTitle className="text-center capitalize">
-            {activeMatch.level} -{' '}
-            {format(activeMatch.slot.range[0] ?? new Date(), 'HH:mm')} - Game{' '}
-            {gameIndex}
+            {activeMatch.level} - {format(activeMatch.slot.range[0], 'HH:mm')} -
+            Game {gameIndex}
           </DrawerDialogTitle>
           <DrawerDialogDescription className="text-center text-muted-foreground capitalize">
             Check playtomic for more details
@@ -186,13 +200,15 @@ function MatchModalComponent() {
                 variant="ghost"
                 type="button"
                 onClick={handleJoinMatch}
-                disabled={isCurrentUserInMatch || isMatchActionLoading || !currentUser}
+                disabled={
+                  isCurrentUserInMatch || isMatchActionLoading || !currentUser
+                }
               >
                 <div className="size-8 flex items-center justify-center rounded-full border-1 border-dashed border">
                   <PlusIcon className="size-4 text-muted-foreground" />
                 </div>
                 <span className="text-muted-foreground text-sm">
-                  {!currentUser ? 'Login to join' : 'Click to join'}
+                  Spare place
                 </span>
               </Button>
             ))}
@@ -250,23 +266,24 @@ const MatchPlayerListItem = ({
           {player.level} on Playtomic
         </div>
       </div>
-      <DropdownMenu open={playerDialogOpen} onOpenChange={setPlayerDialogOpen}>
-        <DropdownMenuTrigger asChild>
-          <Button variant="ghost">
-            <span className="sr-only">Open menu</span>
-            <EllipsisVertical />
-          </Button>
-        </DropdownMenuTrigger>
-        {playerDialogOpen && (
-          <MatchPlayerOptionDialog
-            player={player}
-            currentMatch={currentMatch}
-            isCurrentUser={isCurrentUser}
-            onLeaveMatch={onLeaveMatch}
-            isLoading={isLoading}
-          />
-        )}
-      </DropdownMenu>
+      {currentUser && (
+        <DropdownMenu open={playerDialogOpen} onOpenChange={setPlayerDialogOpen}>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon">
+              <span className="sr-only">Open menu</span>
+              <EllipsisVertical className="size-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          {playerDialogOpen && (
+            <MatchPlayerOptionDialog
+              player={player}
+              isCurrentUser={isCurrentUser}
+              onLeaveMatch={onLeaveMatch}
+              isLoading={isLoading}
+            />
+          )}
+        </DropdownMenu>
+      )}
     </div>
   )
 }
@@ -278,64 +295,56 @@ const MatchPlayerOptionDialog = ({
   isLoading,
 }: {
   player: Match['players'][number]
-  currentMatch: Match
   isCurrentUser: boolean
   onLeaveMatch: () => void
   isLoading: boolean
 }) => {
+  const handleCopyNumber = async () => {
+    if (!player.phone) {
+      toast.error('No phone number available')
+      return
+    }
+    await navigator.clipboard.writeText(player.phone)
+    toast.success('Phone number copied')
+  }
+
   return (
-    <DropdownMenuContent className="w-56" align="start">
-      <DropdownMenuLabel>Manage player</DropdownMenuLabel>
-      <DropdownMenuGroup>
-        {isCurrentUser && (
+    <DropdownMenuContent className="w-56" align="end">
+      {isCurrentUser && (
+        <>
           <DropdownMenuItem onClick={onLeaveMatch} disabled={isLoading}>
             Leave match
-            <DropdownMenuShortcut>⌘L</DropdownMenuShortcut>
           </DropdownMenuItem>
-        )}
-        {!isCurrentUser && (
-          <>
-            <DropdownMenuItem>
-              Remove
-              <DropdownMenuShortcut>⌘D</DropdownMenuShortcut>
-            </DropdownMenuItem>
-            <DropdownMenuItem>
-              Block
-              <DropdownMenuShortcut>⌃⌘B</DropdownMenuShortcut>
-            </DropdownMenuItem>
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger>Move</DropdownMenuSubTrigger>
-            </DropdownMenuSub>
-          </>
-        )}
-        <DropdownMenuSeparator />
-        <DropdownMenuItem>
-          Copy number
-          <DropdownMenuShortcut>⌃⌘C</DropdownMenuShortcut>
-        </DropdownMenuItem>
+          <DropdownMenuSeparator />
+        </>
+      )}
+      <DropdownMenuItem onClick={handleCopyNumber} disabled={!player.phone}>
+        Copy number
+      </DropdownMenuItem>
+      {player.phone && (
         <DropdownMenuItem asChild>
           <a
-            href={`https://wa.me/${player.phone?.replace(/[^0-9]/g, '') ?? ''}`}
+            href={`https://wa.me/${player.phone.replace(/[^0-9]/g, '')}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-2"
           >
             Chat on WhatsApp
             <ExternalLink className="ml-auto h-3 w-3" />
           </a>
         </DropdownMenuItem>
+      )}
+      {player.playtomic_id && (
         <DropdownMenuItem asChild>
           <a
             href={`https://app.playtomic.io/profile/user/${player.playtomic_id}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-2"
           >
             Open in Playtomic
             <ExternalLink className="ml-auto h-3 w-3" />
           </a>
         </DropdownMenuItem>
-      </DropdownMenuGroup>
+      )}
     </DropdownMenuContent>
   )
 }

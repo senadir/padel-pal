@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { EllipsisVertical, ExternalLink, Loader2 } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { Route } from '../$id'
 import type { Option, Player, Session } from '@/utils/types'
 import {
   Field,
@@ -55,11 +56,11 @@ import {
 } from '@/components/ui/alert-dialog'
 import {
   deleteSession,
+  sessionQueryOptions,
   updateSessionStatus,
   useVoteForSession,
 } from '@/utils/sessions'
 import { useAuth, useIsOrganizer } from '@/contexts/auth'
-import { Route, sessionQueryOptions } from '../$id'
 
 export const VotingView = ({ session }: { session: Session }) => {
   const { slot } = Route.useSearch()

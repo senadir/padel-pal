@@ -1,12 +1,12 @@
-import { createFileRoute, redirect, Link, Outlet } from '@tanstack/react-router'
-import { queryOptions, useSuspenseQuery } from '@tanstack/react-query'
+import { Link, Outlet, createFileRoute, redirect } from '@tanstack/react-router'
+import { useSuspenseQuery } from '@tanstack/react-query'
 import { z } from 'zod'
 import { format } from 'date-fns'
 import { CircleAlert } from 'lucide-react'
-import { FieldSet, FieldLegend, FieldDescription } from '@/components/ui/field'
-import { fetchSession, matchQueryOptions } from '@/utils/sessions'
 import { MatchesView } from './-components/matches-view'
 import { VotingView } from './-components/voting-view'
+import { FieldDescription, FieldLegend, FieldSet } from '@/components/ui/field'
+import { matchQueryOptions, sessionQueryOptions } from '@/utils/sessions'
 
 export const Route = createFileRoute('/sessions/$id')({
   component: RouteComponent,
@@ -76,12 +76,6 @@ export const Route = createFileRoute('/sessions/$id')({
   }),
 })
 
-export const sessionQueryOptions = (sessionId: string) =>
-  queryOptions({
-    queryKey: ['sessions', sessionId],
-    queryFn: () => fetchSession({ data: sessionId }),
-  })
-
 function RouteComponent() {
   const { id } = Route.useParams()
   const { data: session } = useSuspenseQuery(sessionQueryOptions(id))
@@ -118,7 +112,9 @@ function RouteComponent() {
                       target="_blank"
                       className="items-baseline text-sm text-muted-foreground"
                     >
-                      <span className="underline">{session.venues[1].name}</span>
+                      <span className="underline">
+                        {session.venues[1].name}
+                      </span>
                     </Link>
                   </span>
                 )}
