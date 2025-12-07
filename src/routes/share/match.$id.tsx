@@ -36,7 +36,9 @@ const fetchMatchForShare = createServerFn({ method: 'GET' })
       startTime: match.start_time,
       venueName: match.sessions.venue_name,
       sessionDate: match.sessions.date,
-      players: match.match_participants.map((p) => p.players?.name).filter(Boolean),
+      players: match.match_participants
+        .map((p) => p.players?.name)
+        .filter(Boolean),
     }
   })
 
@@ -53,11 +55,17 @@ export const Route = createFileRoute('/share/match/$id')({
         meta: [
           { title: 'Match | Padel Pal' },
           { property: 'og:title', content: 'Match | Padel Pal' },
-          { property: 'og:description', content: 'View match details and join the game.' },
+          {
+            property: 'og:description',
+            content: 'View match details and join the game.',
+          },
           { property: 'og:image', content: '/api/og' },
           { name: 'twitter:card', content: 'summary_large_image' },
           { name: 'twitter:title', content: 'Match | Padel Pal' },
-          { name: 'twitter:description', content: 'View match details and join the game.' },
+          {
+            name: 'twitter:description',
+            content: 'View match details and join the game.',
+          },
           { name: 'twitter:image', content: '/api/og' },
         ],
       }
@@ -68,9 +76,10 @@ export const Route = createFileRoute('/share/match/$id')({
       ? format(new Date(match.sessionDate), 'EEEE, MMM d')
       : 'TBD'
     const title = `${match.level} Match at ${time} | Padel Pal`
-    const playerNames = match.players.length > 0
-      ? `Players: ${match.players.join(', ')}`
-      : 'Join this match!'
+    const playerNames =
+      match.players.length > 0
+        ? `Players: ${match.players.join(', ')}`
+        : 'Join this match!'
     const description = `${date} at ${match.venueName}. ${playerNames}`
     const ogImage = `/api/og?type=match&id=${params.id}`
 

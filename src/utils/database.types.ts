@@ -128,6 +128,7 @@ export type Database = {
           avatar: string | null
           created_at: string
           id: string
+          is_blocked: boolean | null
           level: number | null
           name: string | null
           phone: string | null
@@ -138,6 +139,7 @@ export type Database = {
           avatar?: string | null
           created_at?: string
           id: string
+          is_blocked?: boolean | null
           level?: number | null
           name?: string | null
           phone?: string | null
@@ -148,6 +150,7 @@ export type Database = {
           avatar?: string | null
           created_at?: string
           id?: string
+          is_blocked?: boolean | null
           level?: number | null
           name?: string | null
           phone?: string | null

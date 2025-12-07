@@ -1,6 +1,6 @@
 import {
-  createFileRoute,
   Link,
+  createFileRoute,
   redirect,
   useSearch,
 } from '@tanstack/react-router'
@@ -8,8 +8,8 @@ import { useEffect } from 'react'
 import { toast } from 'sonner'
 import { format, subDays } from 'date-fns'
 import { z } from 'zod'
+import { CalendarPlus, ChevronRight, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { ChevronRight, CalendarPlus } from 'lucide-react'
 import {
   Empty,
   EmptyContent,
@@ -18,8 +18,12 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from '@/components/ui/empty'
-import { sessionsQueryOptions } from '@/utils/sessions'
+import {
+  sessionsQueryOptions,
+  userParticipationQueryOptions,
+} from '@/utils/sessions'
 import { useIsOrganizer } from '@/contexts/auth'
+import { Badge } from '@/components/ui/badge'
 
 export const Route = createFileRoute('/')({
   head: () => ({
@@ -37,7 +41,8 @@ export const Route = createFileRoute('/')({
       },
       {
         property: 'og:image',
-        content: '/api/og?title=Open%20Sessions&subtitle=Browse%20and%20join%20padel%20sessions&type=session',
+        content:
+          '/api/og?title=Open%20Sessions&subtitle=Browse%20and%20join%20padel%20sessions&type=session',
       },
       {
         name: 'twitter:title',
@@ -49,7 +54,8 @@ export const Route = createFileRoute('/')({
       },
       {
         name: 'twitter:image',
-        content: '/api/og?title=Open%20Sessions&subtitle=Browse%20and%20join%20padel%20sessions&type=session',
+        content:
+          '/api/og?title=Open%20Sessions&subtitle=Browse%20and%20join%20padel%20sessions&type=session',
       },
     ],
   }),
@@ -91,10 +97,18 @@ export const Route = createFileRoute('/')({
     message: z.string().optional(),
   }),
   loader: async ({ context }) => {
-    const allSessions = await context.queryClient.ensureQueryData(
-      sessionsQueryOptions(),
-    )
     const { authData } = context
+    const playerId = authData?.player?.id
+
+    // Fetch sessions and user participation in parallel
+    const [allSessions, participation] = await Promise.all([
+      context.queryClient.ensureQueryData(sessionsQueryOptions()),
+      playerId
+        ? context.queryClient.ensureQueryData(
+            userParticipationQueryOptions(playerId),
+          )
+        : Promise.resolve({ votedSessionIds: [], joinedSessionIds: [] }),
+    ])
 
     // Filter sessions based on user role
     const isOrganizer = authData?.role === 'organizer'
@@ -120,14 +134,14 @@ export const Route = createFileRoute('/')({
       })
     }
 
-    return { sessions }
+    return { sessions, participation }
   },
   component: App,
 })
 
 function App() {
   const search = useSearch({ from: Route.id })
-  const { sessions } = Route.useLoaderData()
+  const { sessions, participation } = Route.useLoaderData()
   const isOrganizer = useIsOrganizer()
 
   // Show error toast if redirected with error
@@ -153,21 +167,28 @@ function App() {
             </EmptyDescription>
           </EmptyHeader>
           <EmptyContent>
-            <div className="flex gap-2">
-              {isOrganizer && (
-                <Button asChild>
-                  <Link to="/sessions/new">Create Session</Link>
-                </Button>
-              )}
-              <Button variant="outline">Get updated</Button>
-            </div>
+            {isOrganizer && (
+              <Button asChild>
+                <Link to="/sessions/new">Create Session</Link>
+              </Button>
+            )}
           </EmptyContent>
         </Empty>
       ) : (
         <>
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-3xl font-bold">Open sessions</h1>
+              <div className="flex items-baseline justify-between">
+                <h1 className="text-3xl font-bold">Open sessions</h1>
+                {isOrganizer && (
+                  <Button asChild size="icon" variant="ghost">
+                    <Link to="/sessions/new">
+                      <Plus className="h-4 w-4" />
+                      <span className="sr-only">Create session</span>
+                    </Link>
+                  </Button>
+                )}
+              </div>
               <p className="text-muted-foreground mt-1">
                 Below are the open sessions that you can vote for or join.
               </p>
@@ -175,6 +196,28 @@ function App() {
           </div>
           <div className="flex flex-col gap-4">
             {sessions.map((session) => {
+              const hasJoined = participation.joinedSessionIds.includes(
+                session.id,
+              )
+              const hasVoted = participation.votedSessionIds.includes(
+                session.id,
+              )
+
+              // Determine badge based on session status and user participation
+              // Priority: Joined > Voted > Session Status
+              let badge: { label: string; variant: 'default' | 'secondary' | 'outline' } | null = null
+              if (hasJoined) {
+                badge = { label: 'Joined', variant: 'default' }
+              } else if (hasVoted && session.status === 'voting') {
+                badge = { label: 'Voted', variant: 'secondary' }
+              } else if (session.status === 'voting') {
+                badge = { label: 'Voting', variant: 'outline' }
+              } else if (session.status === 'open') {
+                badge = { label: 'Open', variant: 'outline' }
+              } else if (session.status === 'closed') {
+                badge = { label: 'Closed', variant: 'outline' }
+              }
+
               return (
                 <Link
                   key={session.id}
@@ -184,16 +227,21 @@ function App() {
                 >
                   <div className="flex items-center justify-between p-6 border rounded-lg hover:bg-accent transition-colors">
                     <div className="flex-1">
-                      <h2 className="text-lg font-semibold mb-2">
-                        {format(session.date, 'EEEE, MMMM do')}
-                      </h2>
+                      <div className="flex items-center gap-2 mb-2">
+                        <h2 className="text-lg font-semibold">
+                          {format(session.date, 'EEE, MMM do')}
+                        </h2>
+                        {badge && (
+                          <Badge variant={badge.variant}>{badge.label}</Badge>
+                        )}
+                      </div>
                       <p className="text-muted-foreground mb-1">
                         {session.venueName}
                       </p>
                       {session.votingClosesAt && (
                         <p className="text-sm text-muted-foreground">
                           Voting closes:{' '}
-                          {format(session.votingClosesAt, 'EEEE, MMMM do')} at{' '}
+                          {format(session.votingClosesAt, 'EEE, MMM do')} at{' '}
                           {format(session.votingClosesAt, 'ha')}
                         </p>
                       )}

@@ -1,12 +1,26 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
-import { ExternalLink, PlusIcon, EllipsisVertical } from 'lucide-react'
+import {
+  Ban,
+  EllipsisVertical,
+  ExternalLink,
+  PlusIcon,
+  UserMinus,
+} from 'lucide-react'
 import { useState } from 'react'
+import { toast } from 'sonner'
 import type { Match, Player } from '@/utils/types'
-import { matchQueryOptions } from '@/utils/sessions'
-import { sessionQueryOptions } from './$id'
-import { useAuth } from '@/contexts/auth'
+import {
+  addPlayerToMatch,
+  matchQueryOptions,
+  removePlayerFromMatch,
+  sessionQueryOptions,
+  toggleBlockPlayer,
+  useMatchActions,
+} from '@/utils/sessions'
+import { useAuth, useIsOrganizer } from '@/contexts/auth'
+import { PlayerSearch } from '@/components/player-search'
 import {
   DrawerDialog,
   DrawerDialogClose,
@@ -21,13 +35,8 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuGroup,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
-  DropdownMenuShortcut,
-  DropdownMenuSub,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -53,10 +62,16 @@ export const Route = createFileRoute('/sessions/$id/$matchId')({
         meta: [
           { title: 'Match | Padel Pal' },
           { property: 'og:title', content: 'Match | Padel Pal' },
-          { property: 'og:description', content: 'View match details and players.' },
+          {
+            property: 'og:description',
+            content: 'View match details and players.',
+          },
           { property: 'og:image', content: '/api/og' },
           { name: 'twitter:title', content: 'Match | Padel Pal' },
-          { name: 'twitter:description', content: 'View match details and players.' },
+          {
+            name: 'twitter:description',
+            content: 'View match details and players.',
+          },
           { name: 'twitter:image', content: '/api/og' },
         ],
       }
@@ -65,7 +80,7 @@ export const Route = createFileRoute('/sessions/$id/$matchId')({
     const time = format(match.slot.range[0], 'HH:mm')
     const date = format(session.date, 'MMM d')
     const title = `${match.level} ${time} - ${date} | Padel Pal`
-    const description = `${match.level} match at ${time} on ${format(session.date, 'EEEE, MMMM d')}`
+    const description = `${match.level} match at ${time} on ${format(session.date, 'EEE, MMM d')}`
     const ogImage = `/api/og?type=match&id=${match.id}`
 
     return {
@@ -115,6 +130,7 @@ function MatchModalComponent() {
   const navigate = useNavigate({ from: Route.fullPath })
   const { authData } = useAuth()
   const currentUser = authData?.player
+  const isOrganizer = useIsOrganizer()
 
   const { data: matches } = useQuery(matchQueryOptions(sessionId))
   const activeMatch = matches?.find((match) => match.id === matchId)
@@ -122,13 +138,34 @@ function MatchModalComponent() {
   const isCurrentUserInMatch =
     activeMatch?.players.some((p) => p.id === currentUser?.id) ?? false
 
+  const { toggleMatchParticipation, isLoading: isMatchActionLoading } =
+    useMatchActions({
+      sessionId,
+      currentUserId: currentUser?.id ?? '',
+    })
+
   const handleClose = () => {
     navigate({ to: '/sessions/$id', params: { id: sessionId } })
   }
 
-  const handleToggleParticipation = () => {
-    // This will be handled by the parent component's mutation
-    // For now, we'll just close the modal
+  const returnUrl = `/sessions/${sessionId}/${matchId}`
+
+  const handleJoinMatch = () => {
+    if (!activeMatch) return
+    if (!currentUser?.id) {
+      navigate({ to: '/login', replace: true, search: { redirect: returnUrl } })
+      return
+    }
+    toggleMatchParticipation(activeMatch.id, false)
+  }
+
+  const handleLeaveMatch = () => {
+    if (!activeMatch) return
+    if (!currentUser?.id) {
+      navigate({ to: '/login', replace: true, search: { redirect: returnUrl } })
+      return
+    }
+    toggleMatchParticipation(activeMatch.id, true)
   }
 
   if (!activeMatch) {
@@ -141,14 +178,15 @@ function MatchModalComponent() {
   const gameIndex =
     matchesForSlotLevel.findIndex((m) => m.id === activeMatch.id) + 1
 
+  const hasEmptySlots = activeMatch.players.length < 4
+
   return (
     <DrawerDialog open={true} setOpen={(open) => !open && handleClose()}>
       <DrawerDialogContent>
         <DrawerDialogHeader>
           <DrawerDialogTitle className="text-center capitalize">
-            {activeMatch.level} -{' '}
-            {format(activeMatch.slot.range[0] ?? new Date(), 'HH:mm')} - Game{' '}
-            {gameIndex}
+            {activeMatch.level} - {format(activeMatch.slot.range[0], 'HH:mm')} -
+            Game {gameIndex}
           </DrawerDialogTitle>
           <DrawerDialogDescription className="text-center text-muted-foreground capitalize">
             Check playtomic for more details
@@ -160,12 +198,14 @@ function MatchModalComponent() {
               key={player.id}
               player={player}
               match={activeMatch}
+              sessionId={sessionId}
               currentUser={currentUser}
-              onLeaveMatch={handleToggleParticipation}
-              isLoading={false}
+              isOrganizer={isOrganizer}
+              onLeaveMatch={handleLeaveMatch}
+              isLoading={isMatchActionLoading}
             />
           ))}
-          {activeMatch.players.length < 4 &&
+          {hasEmptySlots &&
             Array.from({
               length: 4 - activeMatch.players.length,
             }).map((_, i) => (
@@ -174,17 +214,30 @@ function MatchModalComponent() {
                 className="flex gap-2 items-center justify-start p-0"
                 variant="ghost"
                 type="button"
-                onClick={handleToggleParticipation}
-                disabled={isCurrentUserInMatch}
+                onClick={handleJoinMatch}
+                disabled={
+                  isCurrentUserInMatch || isMatchActionLoading || !currentUser
+                }
               >
                 <div className="size-8 flex items-center justify-center rounded-full border-1 border-dashed border">
                   <PlusIcon className="size-4 text-muted-foreground" />
                 </div>
                 <span className="text-muted-foreground text-sm">
-                  Click to join
+                  Spare place
                 </span>
               </Button>
             ))}
+
+          {/* Add Player UI for organizers */}
+          {hasEmptySlots && (
+            <PlayerSearch
+              excludeIds={activeMatch.players.map((p) => p.id)}
+              onAddPlayer={(playerId) =>
+                addPlayerToMatch({ data: { matchPublicId: matchId, playerId } })
+              }
+              successMessage="Player added to match"
+            />
+          )}
         </div>
         <DrawerDialogFooter>
           <DrawerDialogClose asChild>
@@ -206,13 +259,17 @@ function MatchModalComponent() {
 const MatchPlayerListItem = ({
   player,
   match: currentMatch,
+  sessionId,
   currentUser,
+  isOrganizer,
   onLeaveMatch,
   isLoading,
 }: {
   player: Match['players'][number]
   match: Match
+  sessionId: string
   currentUser: Player | null | undefined
+  isOrganizer: boolean
   onLeaveMatch: () => void
   isLoading: boolean
 }) => {
@@ -239,92 +296,163 @@ const MatchPlayerListItem = ({
           {player.level} on Playtomic
         </div>
       </div>
-      <DropdownMenu open={playerDialogOpen} onOpenChange={setPlayerDialogOpen}>
-        <DropdownMenuTrigger asChild>
-          <Button variant="ghost">
-            <span className="sr-only">Open menu</span>
-            <EllipsisVertical />
-          </Button>
-        </DropdownMenuTrigger>
-        {playerDialogOpen && (
-          <MatchPlayerOptionDialog
-            player={player}
-            currentMatch={currentMatch}
-            isCurrentUser={isCurrentUser}
-            onLeaveMatch={onLeaveMatch}
-            isLoading={isLoading}
-          />
-        )}
-      </DropdownMenu>
+      {currentUser && (
+        <DropdownMenu
+          open={playerDialogOpen}
+          onOpenChange={setPlayerDialogOpen}
+        >
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon">
+              <span className="sr-only">Open menu</span>
+              <EllipsisVertical className="size-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          {playerDialogOpen && (
+            <MatchPlayerOptionDialog
+              player={player}
+              matchId={currentMatch.id}
+              sessionId={sessionId}
+              isCurrentUser={isCurrentUser}
+              isOrganizer={isOrganizer}
+              onLeaveMatch={onLeaveMatch}
+              isLoading={isLoading}
+              onClose={() => setPlayerDialogOpen(false)}
+            />
+          )}
+        </DropdownMenu>
+      )}
     </div>
   )
 }
 
 const MatchPlayerOptionDialog = ({
   player,
+  matchId,
+  sessionId,
   isCurrentUser,
+  isOrganizer,
   onLeaveMatch,
   isLoading,
+  onClose,
 }: {
   player: Match['players'][number]
-  currentMatch: Match
+  matchId: string
+  sessionId: string
   isCurrentUser: boolean
+  isOrganizer: boolean
   onLeaveMatch: () => void
   isLoading: boolean
+  onClose: () => void
 }) => {
+  const queryClient = useQueryClient()
+
+  // Remove player from match mutation (organizer only)
+  const removePlayerMutation = useMutation({
+    mutationFn: () =>
+      removePlayerFromMatch({
+        data: { matchPublicId: matchId, playerId: player.id },
+      }),
+    onSuccess: () => {
+      toast.success(`${player.name} removed from match`)
+      queryClient.invalidateQueries({
+        queryKey: ['sessions', sessionId, 'matches'],
+      })
+      onClose()
+    },
+    onError: (error) => {
+      toast.error(
+        error instanceof Error ? error.message : 'Failed to remove player',
+      )
+    },
+  })
+
+  // Block player mutation (organizer only)
+  const blockPlayerMutation = useMutation({
+    mutationFn: () =>
+      toggleBlockPlayer({ data: { playerId: player.id, isBlocked: true } }),
+    onSuccess: () => {
+      toast.success(`${player.name} has been blocked`)
+      onClose()
+    },
+    onError: (error) => {
+      toast.error(
+        error instanceof Error ? error.message : 'Failed to block player',
+      )
+    },
+  })
+
+  const handleCopyNumber = async () => {
+    if (!player.phone) {
+      toast.error('No phone number available')
+      return
+    }
+    await navigator.clipboard.writeText(player.phone)
+    toast.success('Phone number copied')
+  }
+
+  const isActionPending =
+    isLoading || removePlayerMutation.isPending || blockPlayerMutation.isPending
+
   return (
-    <DropdownMenuContent className="w-56" align="start">
-      <DropdownMenuLabel>Manage player</DropdownMenuLabel>
-      <DropdownMenuGroup>
-        {isCurrentUser && (
-          <DropdownMenuItem onClick={onLeaveMatch} disabled={isLoading}>
+    <DropdownMenuContent className="w-56" align="end">
+      {isCurrentUser && (
+        <>
+          <DropdownMenuItem onClick={onLeaveMatch} disabled={isActionPending}>
             Leave match
-            <DropdownMenuShortcut>⌘L</DropdownMenuShortcut>
           </DropdownMenuItem>
-        )}
-        {!isCurrentUser && (
-          <>
-            <DropdownMenuItem>
-              Remove
-              <DropdownMenuShortcut>⌘D</DropdownMenuShortcut>
-            </DropdownMenuItem>
-            <DropdownMenuItem>
-              Block
-              <DropdownMenuShortcut>⌃⌘B</DropdownMenuShortcut>
-            </DropdownMenuItem>
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger>Move</DropdownMenuSubTrigger>
-            </DropdownMenuSub>
-          </>
-        )}
-        <DropdownMenuSeparator />
-        <DropdownMenuItem>
-          Copy number
-          <DropdownMenuShortcut>⌃⌘C</DropdownMenuShortcut>
-        </DropdownMenuItem>
+          <DropdownMenuSeparator />
+        </>
+      )}
+      <DropdownMenuItem onClick={handleCopyNumber} disabled={!player.phone}>
+        Copy number
+      </DropdownMenuItem>
+      {player.phone && (
         <DropdownMenuItem asChild>
           <a
-            href={`https://wa.me/${player.phone?.replace(/[^0-9]/g, '') ?? ''}`}
+            href={`https://wa.me/${player.phone.replace(/[^0-9]/g, '')}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-2"
           >
             Chat on WhatsApp
             <ExternalLink className="ml-auto h-3 w-3" />
           </a>
         </DropdownMenuItem>
+      )}
+      {player.playtomic_id && (
         <DropdownMenuItem asChild>
           <a
             href={`https://app.playtomic.io/profile/user/${player.playtomic_id}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-2"
           >
             Open in Playtomic
             <ExternalLink className="ml-auto h-3 w-3" />
           </a>
         </DropdownMenuItem>
-      </DropdownMenuGroup>
+      )}
+
+      {/* Organizer-only options */}
+      {isOrganizer && !isCurrentUser && (
+        <>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onClick={() => removePlayerMutation.mutate()}
+            disabled={isActionPending}
+            className="text-destructive focus:text-destructive"
+          >
+            <UserMinus className="mr-2 h-4 w-4" />
+            Remove from match
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => blockPlayerMutation.mutate()}
+            disabled={isActionPending}
+            className="text-destructive focus:text-destructive"
+          >
+            <Ban className="mr-2 h-4 w-4" />
+            Block player
+          </DropdownMenuItem>
+        </>
+      )}
     </DropdownMenuContent>
   )
 }

@@ -43,7 +43,7 @@ interface GeneratedMatch {
   startTime: Date
   endTime: Date
   maxPlayers: number
-  playerIds: string[]
+  playerIds: Array<string>
 }
 
 /**
@@ -122,10 +122,10 @@ async function selectBestBooker(
  *   - Remainder: leftover players (1-3) get their own match with open slots
  */
 export function generateMatchesFromVotes(
-  options: TimeSlotOption[],
-  votes: VoteInput[],
-): GeneratedMatch[] {
-  const matches: GeneratedMatch[] = []
+  options: Array<TimeSlotOption>,
+  votes: Array<VoteInput>,
+): Array<GeneratedMatch> {
+  const matches: Array<GeneratedMatch> = []
 
   for (const option of options) {
     // Find all votes for this option
@@ -166,13 +166,13 @@ interface RawTimeSlotOption {
   id: string
   slot: { id: string; range: [string, string] }
   level: string
-  players: unknown[]
+  players: Array<unknown>
 }
 
 interface RawTimeSlot {
   id: string
   range: [string, string]
-  options: RawTimeSlotOption[]
+  options: Array<RawTimeSlotOption>
 }
 
 export const fetchSessions = createServerFn({ method: 'GET' }).handler(
@@ -249,6 +249,78 @@ export const sessionsQueryOptions = () =>
     queryFn: () => fetchSessions(),
   })
 
+// Fetch user's participation data (votes and match memberships) per session
+export const fetchUserParticipation = createServerFn({ method: 'GET' })
+  .inputValidator((playerId: string) => playerId)
+  .handler(
+    withSentry(async ({ data: playerId }) => {
+      try {
+        const supabase = getSupabaseServerClient()
+
+        // Fetch all votes by this player with session info
+        const { data: votesData, error: votesError } = await supabase
+          .from('session_votes')
+          .select('session_id, sessions!inner(public_id)')
+          .eq('player_id', playerId)
+
+        if (votesError) {
+          console.error('Error fetching votes:', votesError)
+        }
+
+        // Fetch all match participations by this player with session info
+        // Use explicit FK reference to avoid ambiguity with booker_id relationship
+        const { data: participationsData, error: participationsError } =
+          await supabase
+            .from('match_participants')
+            .select('match_id, matches!match_participants_match_id_fkey(session_id, sessions!inner(public_id))')
+            .eq('player_id', playerId)
+
+        if (participationsError) {
+          console.error('Error fetching participations:', participationsError)
+        }
+
+        // Build sets of session public_ids where user has voted or joined
+        const votedSessionIds = new Set<string>()
+        const joinedSessionIds = new Set<string>()
+
+        votesData?.forEach((vote) => {
+          const sessions = vote.sessions as { public_id: string } | null
+          if (sessions?.public_id) {
+            votedSessionIds.add(sessions.public_id)
+          }
+        })
+
+        participationsData?.forEach((participation) => {
+          const matches = participation.matches as {
+            session_id: number
+            sessions: { public_id: string }
+          } | null
+          if (matches?.sessions?.public_id) {
+            joinedSessionIds.add(matches.sessions.public_id)
+          }
+        })
+
+        return {
+          votedSessionIds: Array.from(votedSessionIds),
+          joinedSessionIds: Array.from(joinedSessionIds),
+        }
+      } catch (err) {
+        console.error('Error in fetchUserParticipation:', err)
+        return { votedSessionIds: [], joinedSessionIds: [] }
+      }
+    }),
+  )
+
+export const userParticipationQueryOptions = (playerId: string | undefined) =>
+  queryOptions({
+    queryKey: ['sessions', 'participation', playerId],
+    queryFn: () =>
+      playerId
+        ? fetchUserParticipation({ data: playerId })
+        : Promise.resolve({ votedSessionIds: [], joinedSessionIds: [] }),
+    enabled: !!playerId,
+  })
+
 export const fetchSession = createServerFn({ method: 'GET' })
   .inputValidator((d: string) => d)
   .handler(
@@ -256,120 +328,120 @@ export const fetchSession = createServerFn({ method: 'GET' })
       try {
         const supabase = getSupabaseServerClient()
 
-      // Fetch session from Supabase using public_id
-      const { data: sessionRow, error } = await supabase
-        .from('sessions')
-        .select('*')
-        .eq('public_id', data)
-        .single()
+        // Fetch session from Supabase using public_id
+        const { data: sessionRow, error } = await supabase
+          .from('sessions')
+          .select('*')
+          .eq('public_id', data)
+          .single()
 
-      if (error) {
-        console.error('Supabase error:', error)
-        if (error.code === 'PGRST116') {
+        if (error) {
+          console.error('Supabase error:', error)
+          if (error.code === 'PGRST116') {
+            throw notFound()
+          }
+          throw new Error(`Failed to fetch session: ${error.message}`)
+        }
+
+        if (!sessionRow) {
           throw notFound()
         }
-        throw new Error(`Failed to fetch session: ${error.message}`)
-      }
 
-      if (!sessionRow) {
-        throw notFound()
-      }
+        // Fetch votes for this session
+        const { data: votesData, error: votesError } = await supabase
+          .from('session_votes')
+          .select('*, players(*)')
+          .eq('session_id', sessionRow.id)
 
-      // Fetch votes for this session
-      const { data: votesData, error: votesError } = await supabase
-        .from('session_votes')
-        .select('*, players(*)')
-        .eq('session_id', sessionRow.id)
+        if (votesError) {
+          console.error('Error fetching votes:', votesError)
+        }
 
-      if (votesError) {
-        console.error('Error fetching votes:', votesError)
-      }
+        // Transform database row to Session type
+        const sessionDate = sessionRow.date
+          ? new Date(sessionRow.date)
+          : new Date()
 
-      // Transform database row to Session type
-      const sessionDate = sessionRow.date
-        ? new Date(sessionRow.date)
-        : new Date()
+        // Parse time slots from JSON
+        const timeSlotsRaw: Array<RawTimeSlot> = sessionRow.time_slots
+          ? typeof sessionRow.time_slots === 'string'
+            ? JSON.parse(sessionRow.time_slots)
+            : sessionRow.time_slots
+          : []
 
-      // Parse time slots from JSON
-      const timeSlotsRaw: RawTimeSlot[] = sessionRow.time_slots
-        ? typeof sessionRow.time_slots === 'string'
-          ? JSON.parse(sessionRow.time_slots)
-          : sessionRow.time_slots
-        : []
+        // Add players to options based on votes
+        const timeSlots = timeSlotsRaw
+          .map((slot) => ({
+            id: slot.id,
+            range: [new Date(slot.range[0]), new Date(slot.range[1])] as [
+              Date,
+              Date,
+            ],
+            options: slot.options.map((option) => {
+              // Find all votes for this option
+              const votesForOption = votesData?.filter(
+                (vote) => vote.option_id === option.id,
+              )
 
-      // Add players to options based on votes
-      const timeSlots = timeSlotsRaw
-        .map((slot) => ({
-          id: slot.id,
-          range: [new Date(slot.range[0]), new Date(slot.range[1])] as [
-            Date,
-            Date,
-          ],
-          options: slot.options.map((option) => {
-            // Find all votes for this option
-            const votesForOption = votesData?.filter(
-              (vote) => vote.option_id === option.id,
-            )
+              // Transform votes to players with votedAt timestamp
+              const players =
+                votesForOption?.map((vote) => ({
+                  ...(vote.players as Player),
+                  votedAt: new Date(vote.voted_at),
+                })) || []
 
-            // Transform votes to players with votedAt timestamp
-            const players =
-              votesForOption?.map((vote) => ({
-                ...(vote.players as Player),
-                votedAt: new Date(vote.voted_at),
-              })) || []
+              return {
+                id: option.id,
+                slot: {
+                  id: slot.id,
+                  range: [new Date(slot.range[0]), new Date(slot.range[1])] as [
+                    Date,
+                    Date,
+                  ],
+                },
+                level: option.level,
+                players,
+              }
+            }),
+          }))
+          .sort((a, b) => {
+            // Sort time slots by start time
+            const aTime = new Date(a.range[0]).getTime()
+            const bTime = new Date(b.range[0]).getTime()
+            return aTime - bTime
+          })
 
-            return {
-              id: option.id,
-              slot: {
-                id: slot.id,
-                range: [new Date(slot.range[0]), new Date(slot.range[1])] as [
-                  Date,
-                  Date,
-                ],
+        // Parse venues from JSON or create from legacy fields
+        const venues: Array<SessionVenue> = sessionRow.venues
+          ? typeof sessionRow.venues === 'string'
+            ? JSON.parse(sessionRow.venues)
+            : sessionRow.venues
+          : [
+              {
+                name: sessionRow.venue_name || '',
+                location: sessionRow.venue_location || '',
+                isPrimary: true,
               },
-              level: option.level,
-              players,
-            }
-          }),
-        }))
-        .sort((a, b) => {
-          // Sort time slots by start time
-          const aTime = new Date(a.range[0]).getTime()
-          const bTime = new Date(b.range[0]).getTime()
-          return aTime - bTime
-        })
+            ]
 
-      // Parse venues from JSON or create from legacy fields
-      const venues: SessionVenue[] = sessionRow.venues
-        ? typeof sessionRow.venues === 'string'
-          ? JSON.parse(sessionRow.venues)
-          : sessionRow.venues
-        : [
-            {
-              name: sessionRow.venue_name || '',
-              location: sessionRow.venue_location || '',
-              isPrimary: true,
-            },
-          ]
+        const session: Session = {
+          id: sessionRow.public_id,
+          venues,
+          date: sessionDate,
+          levels: (sessionRow.levels || []).map((level) => ({
+            level,
+            timeSlots: [],
+          })),
+          timeSlots,
+          limitPlayers: sessionRow.limit_players || false,
+          playersPerSlot: sessionRow.players_per_slot || undefined,
+          votingClosesAt: sessionRow.voting_closes_at
+            ? new Date(sessionRow.voting_closes_at)
+            : undefined,
+          status: sessionRow.status,
+        }
 
-      const session: Session = {
-        id: sessionRow.public_id,
-        venues,
-        date: sessionDate,
-        levels: (sessionRow.levels || []).map((level) => ({
-          level,
-          timeSlots: [],
-        })),
-        timeSlots,
-        limitPlayers: sessionRow.limit_players || false,
-        playersPerSlot: sessionRow.players_per_slot || undefined,
-        votingClosesAt: sessionRow.voting_closes_at
-          ? new Date(sessionRow.voting_closes_at)
-          : undefined,
-        status: sessionRow.status,
-      }
-
-      return session
+        return session
       } catch (err) {
         console.error('Error fetching session:', err)
         if (err instanceof Error && err.message.includes('404')) {
@@ -383,28 +455,28 @@ export const fetchSession = createServerFn({ method: 'GET' })
 export const fetchMatches = createServerFn({ method: 'GET' })
   .inputValidator((sessionId: string) => sessionId)
   .handler(
-    withSentry(async ({ data: sessionPublicId }): Promise<Match[]> => {
+    withSentry(async ({ data: sessionPublicId }): Promise<Array<Match>> => {
       try {
-      const supabase = getSupabaseServerClient()
+        const supabase = getSupabaseServerClient()
 
-      // Get session ID from public_id
-      const { data: sessionRow, error: sessionError } = await supabase
-        .from('sessions')
-        .select('id')
-        .eq('public_id', sessionPublicId)
-        .single()
+        // Get session ID from public_id
+        const { data: sessionRow, error: sessionError } = await supabase
+          .from('sessions')
+          .select('id')
+          .eq('public_id', sessionPublicId)
+          .single()
 
-      if (sessionError || !sessionRow) {
-        console.error('Session not found:', sessionError)
-        return []
-      }
+        if (sessionError || !sessionRow) {
+          console.error('Session not found:', sessionError)
+          return []
+        }
 
-      // Fetch all matches for this session with participants and Playtomic data
-      // Use explicit FK reference to avoid ambiguity with booker_id relationship
-      const { data: matchesData, error: matchesError } = await supabase
-        .from('matches')
-        .select(
-          `
+        // Fetch all matches for this session with participants and Playtomic data
+        // Use explicit FK reference to avoid ambiguity with booker_id relationship
+        const { data: matchesData, error: matchesError } = await supabase
+          .from('matches')
+          .select(
+            `
           *,
           match_participants!match_participants_match_id_fkey (
             *,
@@ -412,75 +484,75 @@ export const fetchMatches = createServerFn({ method: 'GET' })
           ),
           playtomic_matches (*)
         `,
-        )
-        .eq('session_id', sessionRow.id)
-        .order('start_time', { ascending: true })
+          )
+          .eq('session_id', sessionRow.id)
+          .order('start_time', { ascending: true })
 
-      if (matchesError) {
-        console.error('Error fetching matches:', matchesError)
-        return []
-      }
-
-      if (!matchesData || matchesData.length === 0) {
-        // No matches generated yet
-        return []
-      }
-
-      // Transform database matches to Match type
-      const matches: Match[] = matchesData.map((match) => {
-        const participants = match.match_participants
-        const players = participants.map((p) => ({
-          ...p.players,
-          votedAt: new Date(p.joined_at), // Use joined_at as votedAt timestamp
-          status: 'draft' as const, // Default status for now
-        }))
-
-        // Transform Playtomic match data if it exists
-        const playtomicMatch = match.playtomic_matches
-          ? {
-              id: match.playtomic_matches.id,
-              playtomic_match_id: match.playtomic_matches.playtomic_match_id,
-              match_url: match.playtomic_matches.match_url,
-              club_name: match.playtomic_matches.club_name,
-              court_name: match.playtomic_matches.court_name,
-              start_time: match.playtomic_matches.start_time,
-              end_time: match.playtomic_matches.end_time,
-              playtomic_players: match.playtomic_matches
-                .playtomic_players as any,
-              match_status: match.playtomic_matches.match_status as
-                | 'scheduled'
-                | 'played'
-                | 'cancelled'
-                | null,
-              score: match.playtomic_matches.score as {
-                team1: number
-                team2: number
-              } | null,
-              last_synced_at: match.playtomic_matches.last_synced_at,
-              created_at: match.playtomic_matches.created_at,
-              updated_at: match.playtomic_matches.updated_at,
-            }
-          : null
-
-        return {
-          id: match.public_id,
-          sessionId: sessionPublicId,
-          slot: {
-            id: match.time_slot_id,
-            range: [new Date(match.start_time), new Date(match.end_time)],
-          },
-          level: match.level as
-            | 'beginner'
-            | 'improver'
-            | 'intermediate'
-            | 'advanced',
-          players,
-          playtomicMatch,
-          status: 'draft' as const, // Default status
+        if (matchesError) {
+          console.error('Error fetching matches:', matchesError)
+          return []
         }
-      })
 
-      return matches
+        if (!matchesData || matchesData.length === 0) {
+          // No matches generated yet
+          return []
+        }
+
+        // Transform database matches to Match type
+        const matches: Array<Match> = matchesData.map((match) => {
+          const participants = match.match_participants
+          const players = participants.map((p) => ({
+            ...p.players,
+            votedAt: new Date(p.joined_at), // Use joined_at as votedAt timestamp
+            status: 'draft' as const, // Default status for now
+          }))
+
+          // Transform Playtomic match data if it exists
+          const playtomicMatch = match.playtomic_matches
+            ? {
+                id: match.playtomic_matches.id,
+                playtomic_match_id: match.playtomic_matches.playtomic_match_id,
+                match_url: match.playtomic_matches.match_url,
+                club_name: match.playtomic_matches.club_name,
+                court_name: match.playtomic_matches.court_name,
+                start_time: match.playtomic_matches.start_time,
+                end_time: match.playtomic_matches.end_time,
+                playtomic_players: match.playtomic_matches
+                  .playtomic_players as any,
+                match_status: match.playtomic_matches.match_status as
+                  | 'scheduled'
+                  | 'played'
+                  | 'cancelled'
+                  | null,
+                score: match.playtomic_matches.score as {
+                  team1: number
+                  team2: number
+                } | null,
+                last_synced_at: match.playtomic_matches.last_synced_at,
+                created_at: match.playtomic_matches.created_at,
+                updated_at: match.playtomic_matches.updated_at,
+              }
+            : null
+
+          return {
+            id: match.public_id,
+            sessionId: sessionPublicId,
+            slot: {
+              id: match.time_slot_id,
+              range: [new Date(match.start_time), new Date(match.end_time)],
+            },
+            level: match.level as
+              | 'beginner'
+              | 'improver'
+              | 'intermediate'
+              | 'advanced',
+            players,
+            playtomicMatch,
+            status: 'draft' as const, // Default status
+          }
+        })
+
+        return matches
       } catch (err) {
         console.error('Error in fetchMatches:', err)
         return []
@@ -496,7 +568,7 @@ export const sessionQueryOptions = (sessionId: string) =>
 
 export const matchQueryOptions = (sessionId: string) =>
   queryOptions({
-    queryKey: ['matches', sessionId],
+    queryKey: ['sessions', sessionId, 'matches'],
     queryFn: () => fetchMatches({ data: sessionId }),
   })
 
@@ -515,31 +587,41 @@ export const voteForOption = createServerFn({ method: 'POST' })
     withSentry(async ({ data }) => {
       const supabase = getSupabaseServerClient()
 
-    // Get session ID from public_id
-    const { data: sessionRow, error: sessionError } = await supabase
-      .from('sessions')
-      .select('id')
-      .eq('public_id', data.sessionPublicId)
-      .single()
+      // Get session ID from public_id
+      const { data: sessionRow, error: sessionError } = await supabase
+        .from('sessions')
+        .select('id')
+        .eq('public_id', data.sessionPublicId)
+        .single()
 
-    if (sessionError || !sessionRow) {
-      throw new Error('Session not found')
-    }
+      if (sessionError || !sessionRow) {
+        throw new Error('Session not found')
+      }
 
-    // Insert or update vote (upsert on unique constraint)
-    const { error } = await supabase.from('session_votes').upsert(
-      {
-        player_id: data.playerId,
-        session_id: sessionRow.id,
-        option_id: data.optionId,
-      },
-      {
-        onConflict: 'player_id,session_id,option_id',
-      },
-    )
+      // Insert or update vote (upsert on unique constraint)
+      const { error } = await supabase.from('session_votes').upsert(
+        {
+          player_id: data.playerId,
+          session_id: sessionRow.id,
+          option_id: data.optionId,
+        },
+        {
+          onConflict: 'player_id,session_id,option_id',
+        },
+      )
 
       if (error) {
         console.error('Error voting:', error)
+        // Check for common error cases and provide user-friendly messages
+        if (error.message.includes('row-level security policy')) {
+          throw new Error(
+            'Unable to add vote. The player may already have a vote in this time slot.',
+          )
+        }
+        if (error.code === '23505') {
+          // Unique constraint violation
+          throw new Error('This player has already voted for this option.')
+        }
         throw new Error(`Failed to vote: ${error.message}`)
       }
 
@@ -562,24 +644,24 @@ export const unvoteForOption = createServerFn({ method: 'POST' })
     withSentry(async ({ data }) => {
       const supabase = getSupabaseServerClient()
 
-    // Get session ID from public_id
-    const { data: sessionRow, error: sessionError } = await supabase
-      .from('sessions')
-      .select('id')
-      .eq('public_id', data.sessionPublicId)
-      .single()
+      // Get session ID from public_id
+      const { data: sessionRow, error: sessionError } = await supabase
+        .from('sessions')
+        .select('id')
+        .eq('public_id', data.sessionPublicId)
+        .single()
 
-    if (sessionError || !sessionRow) {
-      throw new Error('Session not found')
-    }
+      if (sessionError || !sessionRow) {
+        throw new Error('Session not found')
+      }
 
-    // Delete the vote
-    const { error } = await supabase
-      .from('session_votes')
-      .delete()
-      .eq('player_id', data.playerId)
-      .eq('session_id', sessionRow.id)
-      .eq('option_id', data.optionId)
+      // Delete the vote
+      const { error } = await supabase
+        .from('session_votes')
+        .delete()
+        .eq('player_id', data.playerId)
+        .eq('session_id', sessionRow.id)
+        .eq('option_id', data.optionId)
 
       if (error) {
         console.error('Error unvoting:', error)
@@ -605,59 +687,61 @@ export const joinMatch = createServerFn({ method: 'POST' })
     withSentry(async ({ data }) => {
       const supabase = getSupabaseServerClient()
 
-    // Get match ID from public_id
-    const { data: matchRow, error: matchError } = await supabase
-      .from('matches')
-      .select('id, max_players, start_time, end_time, session_id, booker_id')
-      .eq('public_id', data.matchPublicId)
-      .single()
+      // Get match ID from public_id
+      const { data: matchRow, error: matchError } = await supabase
+        .from('matches')
+        .select('id, max_players, start_time, end_time, session_id, booker_id')
+        .eq('public_id', data.matchPublicId)
+        .single()
 
-    if (matchError || !matchRow) {
-      throw new Error('Match not found')
-    }
-
-    // Check if match is full
-    const { count, error: countError } = await supabase
-      .from('match_participants')
-      .select('*', { count: 'exact', head: true })
-      .eq('match_id', matchRow.id)
-
-    if (countError) {
-      throw new Error(`Failed to check match capacity: ${countError.message}`)
-    }
-
-    if (count !== null && count >= matchRow.max_players) {
-      throw new Error('Match is full')
-    }
-
-    // Insert participant (trigger will check for time overlap)
-    const { error } = await supabase.from('match_participants').insert({
-      match_id: matchRow.id,
-      player_id: data.playerId,
-      source: data.source,
-    })
-
-    if (error) {
-      console.error('Error joining match:', error)
-      // Check if it's a time overlap error from the trigger
-      if (error.message.includes('already in a match during this time slot')) {
-        throw new Error('You are already in a match during this time slot')
+      if (matchError || !matchRow) {
+        throw new Error('Match not found')
       }
-      throw new Error(`Failed to join match: ${error.message}`)
-    }
 
-    // If match has no booker, assign the best one (considering session-wide fairness)
-    if (!matchRow.booker_id) {
-      const bestBookerId = await selectBestBooker(
-        supabase,
-        matchRow.id,
-        matchRow.session_id,
-      )
-      if (bestBookerId) {
-        const { error: updateError } = await supabase
-          .from('matches')
-          .update({ booker_id: bestBookerId })
-          .eq('id', matchRow.id)
+      // Check if match is full
+      const { count, error: countError } = await supabase
+        .from('match_participants')
+        .select('*', { count: 'exact', head: true })
+        .eq('match_id', matchRow.id)
+
+      if (countError) {
+        throw new Error(`Failed to check match capacity: ${countError.message}`)
+      }
+
+      if (count !== null && count >= matchRow.max_players) {
+        throw new Error('Match is full')
+      }
+
+      // Insert participant (trigger will check for time overlap)
+      const { error } = await supabase.from('match_participants').insert({
+        match_id: matchRow.id,
+        player_id: data.playerId,
+        source: data.source,
+      })
+
+      if (error) {
+        console.error('Error joining match:', error)
+        // Check if it's a time overlap error from the trigger
+        if (
+          error.message.includes('already in a match during this time slot')
+        ) {
+          throw new Error('You are already in a match during this time slot')
+        }
+        throw new Error(`Failed to join match: ${error.message}`)
+      }
+
+      // If match has no booker, assign the best one (considering session-wide fairness)
+      if (!matchRow.booker_id) {
+        const bestBookerId = await selectBestBooker(
+          supabase,
+          matchRow.id,
+          matchRow.session_id,
+        )
+        if (bestBookerId) {
+          const { error: updateError } = await supabase
+            .from('matches')
+            .update({ booker_id: bestBookerId })
+            .eq('id', matchRow.id)
 
           if (updateError) {
             console.error('Error assigning booker:', updateError)
@@ -684,62 +768,276 @@ export const unjoinMatch = createServerFn({ method: 'POST' })
     withSentry(async ({ data }) => {
       const supabase = getSupabaseServerClient()
 
-    // Get match ID from public_id along with booker info
-    const { data: matchRow, error: matchError } = await supabase
-      .from('matches')
-      .select('id, session_id, booker_id')
-      .eq('public_id', data.matchPublicId)
-      .single()
-
-    if (matchError || !matchRow) {
-      throw new Error('Match not found')
-    }
-
-    // Get the participant ID before deleting (to check if they are the booker)
-    const { data: participantRow, error: participantError } = await supabase
-      .from('match_participants')
-      .select('id')
-      .eq('match_id', matchRow.id)
-      .eq('player_id', data.playerId)
-      .single()
-
-    if (participantError || !participantRow) {
-      throw new Error('Participant not found')
-    }
-
-    const leavingParticipantId = participantRow.id
-    const isLeavingBooker = matchRow.booker_id === leavingParticipantId
-
-    // Delete the participant
-    const { error } = await supabase
-      .from('match_participants')
-      .delete()
-      .eq('match_id', matchRow.id)
-      .eq('player_id', data.playerId)
-
-    if (error) {
-      console.error('Error leaving match:', error)
-      throw new Error(`Failed to leave match: ${error.message}`)
-    }
-
-    // If the leaving player was the booker, reassign to another participant
-    if (isLeavingBooker) {
-      const newBookerId = await selectBestBooker(
-        supabase,
-        matchRow.id,
-        matchRow.session_id,
-      )
-
-      // Update booker_id (will be null if no participants left)
-      const { error: updateError } = await supabase
+      // Get match ID from public_id along with booker info
+      const { data: matchRow, error: matchError } = await supabase
         .from('matches')
-        .update({ booker_id: newBookerId })
-        .eq('id', matchRow.id)
+        .select('id, session_id, booker_id')
+        .eq('public_id', data.matchPublicId)
+        .single()
+
+      if (matchError || !matchRow) {
+        throw new Error('Match not found')
+      }
+
+      // Get the participant ID before deleting (to check if they are the booker)
+      const { data: participantRow, error: participantError } = await supabase
+        .from('match_participants')
+        .select('id')
+        .eq('match_id', matchRow.id)
+        .eq('player_id', data.playerId)
+        .single()
+
+      if (participantError || !participantRow) {
+        throw new Error('Participant not found')
+      }
+
+      const leavingParticipantId = participantRow.id
+      const isLeavingBooker = matchRow.booker_id === leavingParticipantId
+
+      // Delete the participant
+      const { error } = await supabase
+        .from('match_participants')
+        .delete()
+        .eq('match_id', matchRow.id)
+        .eq('player_id', data.playerId)
+
+      if (error) {
+        console.error('Error leaving match:', error)
+        throw new Error(`Failed to leave match: ${error.message}`)
+      }
+
+      // If the leaving player was the booker, reassign to another participant
+      if (isLeavingBooker) {
+        const newBookerId = await selectBestBooker(
+          supabase,
+          matchRow.id,
+          matchRow.session_id,
+        )
+
+        // Update booker_id (will be null if no participants left)
+        const { error: updateError } = await supabase
+          .from('matches')
+          .update({ booker_id: newBookerId })
+          .eq('id', matchRow.id)
 
         if (updateError) {
           console.error('Error reassigning booker:', updateError)
           // Don't fail the unjoin operation for booker reassignment
         }
+      }
+
+      return { success: true }
+    }),
+  )
+
+// Block/unblock a player (organizer only)
+export const toggleBlockPlayer = createServerFn({ method: 'POST' })
+  .inputValidator(
+    zodValidator(
+      z.object({
+        playerId: z.string(),
+        isBlocked: z.boolean(),
+      }),
+    ),
+  )
+  .handler(
+    withSentry(async ({ data }) => {
+      const supabase = getSupabaseServerClient()
+
+      const { error } = await supabase
+        .from('players')
+        .update({ is_blocked: data.isBlocked })
+        .eq('id', data.playerId)
+
+      if (error) {
+        console.error('Error toggling block status:', error)
+        throw new Error(`Failed to ${data.isBlocked ? 'block' : 'unblock'} player`)
+      }
+
+      return { success: true }
+    }),
+  )
+
+// Remove a player from a match (organizer only)
+export const removePlayerFromMatch = createServerFn({ method: 'POST' })
+  .inputValidator(
+    zodValidator(
+      z.object({
+        matchPublicId: z.string(),
+        playerId: z.string(),
+      }),
+    ),
+  )
+  .handler(
+    withSentry(async ({ data }) => {
+      const supabase = getSupabaseServerClient()
+
+      // Get match by public_id
+      const { data: matchRow, error: matchError } = await supabase
+        .from('matches')
+        .select('id, booker_id, session_id')
+        .eq('public_id', data.matchPublicId)
+        .single()
+
+      if (matchError || !matchRow) {
+        throw new Error('Match not found')
+      }
+
+      // Get participant to check if they're the booker
+      const { data: participantRow, error: participantError } = await supabase
+        .from('match_participants')
+        .select('id')
+        .eq('match_id', matchRow.id)
+        .eq('player_id', data.playerId)
+        .single()
+
+      if (participantError || !participantRow) {
+        throw new Error('Player not in this match')
+      }
+
+      const removingParticipantId = participantRow.id
+      const isRemovingBooker = matchRow.booker_id === removingParticipantId
+
+      // Delete the participant
+      const { error } = await supabase
+        .from('match_participants')
+        .delete()
+        .eq('match_id', matchRow.id)
+        .eq('player_id', data.playerId)
+
+      if (error) {
+        console.error('Error removing player from match:', error)
+        throw new Error(`Failed to remove player: ${error.message}`)
+      }
+
+      // If the removed player was the booker, reassign to another participant
+      if (isRemovingBooker) {
+        const newBookerId = await selectBestBooker(
+          supabase,
+          matchRow.id,
+          matchRow.session_id,
+        )
+
+        const { error: updateError } = await supabase
+          .from('matches')
+          .update({ booker_id: newBookerId })
+          .eq('id', matchRow.id)
+
+        if (updateError) {
+          console.error('Error reassigning booker:', updateError)
+        }
+      }
+
+      return { success: true }
+    }),
+  )
+
+// Search players by name or phone (fuzzy search)
+export const searchPlayers = createServerFn({ method: 'GET' })
+  .inputValidator(
+    zodValidator(
+      z.object({
+        query: z.string().min(1),
+        excludeIds: z.array(z.string()).optional(),
+      }),
+    ),
+  )
+  .handler(
+    withSentry(async ({ data }) => {
+      const supabase = getSupabaseServerClient()
+
+      // Search by name (case-insensitive, partial match) or phone
+      let query = supabase
+        .from('players')
+        .select('id, name, phone, avatar, level, playtomic_id, is_blocked')
+        .eq('is_blocked', false)
+        .or(`name.ilike.%${data.query}%,phone.ilike.%${data.query}%`)
+        .limit(10)
+
+      if (data.excludeIds && data.excludeIds.length > 0) {
+        query = query.not('id', 'in', `(${data.excludeIds.join(',')})`)
+      }
+
+      const { data: players, error } = await query
+
+      if (error) {
+        console.error('Error searching players:', error)
+        throw new Error('Failed to search players')
+      }
+
+      return players ?? []
+    }),
+  )
+
+// Add a player to a match (organizer only)
+export const addPlayerToMatch = createServerFn({ method: 'POST' })
+  .inputValidator(
+    zodValidator(
+      z.object({
+        matchPublicId: z.string(),
+        playerId: z.string(),
+      }),
+    ),
+  )
+  .handler(
+    withSentry(async ({ data }) => {
+      const supabase = getSupabaseServerClient()
+
+      // Get match by public_id
+      const { data: matchRow, error: matchError } = await supabase
+        .from('matches')
+        .select('id, max_players, session_id')
+        .eq('public_id', data.matchPublicId)
+        .single()
+
+      if (matchError || !matchRow) {
+        throw new Error('Match not found')
+      }
+
+      // Check current player count
+      const { count, error: countError } = await supabase
+        .from('match_participants')
+        .select('*', { count: 'exact', head: true })
+        .eq('match_id', matchRow.id)
+
+      if (countError) {
+        throw new Error('Failed to check match capacity')
+      }
+
+      if ((count ?? 0) >= matchRow.max_players) {
+        throw new Error('Match is full')
+      }
+
+      // Check if player is blocked
+      const { data: playerRow, error: playerError } = await supabase
+        .from('players')
+        .select('is_blocked')
+        .eq('id', data.playerId)
+        .single()
+
+      if (playerError || !playerRow) {
+        throw new Error('Player not found')
+      }
+
+      if (playerRow.is_blocked) {
+        throw new Error('Player is blocked')
+      }
+
+      // Add participant
+      const { error: insertError } = await supabase
+        .from('match_participants')
+        .insert({
+          match_id: matchRow.id,
+          player_id: data.playerId,
+          source: 'organizer',
+        })
+
+      if (insertError) {
+        if (insertError.code === '23505') {
+          throw new Error('Player is already in this match')
+        }
+        console.error('Error adding player to match:', insertError)
+        throw new Error(`Failed to add player: ${insertError.message}`)
       }
 
       return { success: true }
@@ -779,7 +1077,7 @@ async function generateMatchesHelper(sessionPublicId: string) {
       : sessionRow.time_slots
 
   // Transform database format to function input
-  const options: TimeSlotOption[] = []
+  const options: Array<TimeSlotOption> = []
   for (const timeSlot of timeSlots) {
     for (const option of timeSlot.options) {
       options.push({
@@ -792,7 +1090,7 @@ async function generateMatchesHelper(sessionPublicId: string) {
     }
   }
 
-  const voteInputs: VoteInput[] =
+  const voteInputs: Array<VoteInput> =
     votes?.map((vote) => ({
       optionId: vote.option_id,
       playerId: vote.player_id,
@@ -937,10 +1235,17 @@ export const generateMatches = createServerFn({ method: 'POST' })
     }),
   )
 
-export const useVoteForSession = ({ sessionId }: { sessionId: string }) => {
+export const useVoteForSession = ({
+  sessionId,
+  currentUserId,
+}: {
+  sessionId: string
+  currentUserId: string
+}) => {
   const queryClient = useQueryClient()
 
   const { mutate: voteForSession } = useMutation({
+    mutationKey: ['vote', sessionId],
     mutationFn: async ({
       timeSlot,
       level,
@@ -1115,9 +1420,18 @@ export const useVoteForSession = ({ sessionId }: { sessionId: string }) => {
         toast.success(`You voted for the ${timeSlotStart} ${levelStr} slot`)
       }
     },
-    // Always refetch after error or success to sync with server
+    // Only invalidate when this is the last mutation for this key
+    // This prevents race conditions when rapidly clicking by batching invalidation
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['sessions', sessionId] })
+      if (
+        queryClient.isMutating({ mutationKey: ['vote', sessionId] }) === 1
+      ) {
+        queryClient.invalidateQueries({ queryKey: ['sessions', sessionId] })
+        // Invalidate user participation to update badges on home page
+        queryClient.invalidateQueries({
+          queryKey: ['sessions', 'participation', currentUserId],
+        })
+      }
     },
   })
   return { voteForSession }
@@ -1154,8 +1468,9 @@ export const useMatchActions = ({
     onSuccess: (_data, matchPublicId) => {
       // Get match data from query cache
       const matches = queryClient.getQueryData<Array<Match>>([
-        'matches',
+        'sessions',
         sessionId,
+        'matches',
       ])
       const match = matches?.find((m) => m.id === matchPublicId)
 
@@ -1169,7 +1484,13 @@ export const useMatchActions = ({
         toast.success('Successfully joined match!')
       }
       // Refetch matches to get updated data
-      queryClient.invalidateQueries({ queryKey: ['matches', sessionId] })
+      queryClient.invalidateQueries({
+        queryKey: ['sessions', sessionId, 'matches'],
+      })
+      // Invalidate user participation to update badges on home page
+      queryClient.invalidateQueries({
+        queryKey: ['sessions', 'participation', currentUserId],
+      })
     },
   })
 
@@ -1193,8 +1514,9 @@ export const useMatchActions = ({
     onSuccess: (_data, matchPublicId) => {
       // Get match data from query cache
       const matches = queryClient.getQueryData<Array<Match>>([
-        'matches',
+        'sessions',
         sessionId,
+        'matches',
       ])
       const match = matches?.find((m) => m.id === matchPublicId)
 
@@ -1208,7 +1530,13 @@ export const useMatchActions = ({
         toast.success('Successfully left match!')
       }
       // Refetch matches to get updated data
-      queryClient.invalidateQueries({ queryKey: ['matches', sessionId] })
+      queryClient.invalidateQueries({
+        queryKey: ['sessions', sessionId, 'matches'],
+      })
+      // Invalidate user participation to update badges on home page
+      queryClient.invalidateQueries({
+        queryKey: ['sessions', 'participation', currentUserId],
+      })
     },
   })
 
@@ -1293,48 +1621,49 @@ export const createSession = createServerFn({ method: 'POST' })
         try {
           const supabase = getSupabaseServerClient()
 
-        // Save all venues to database for future autocomplete
-        for (const venue of data.venues) {
-          if (venue.name && venue.location && venue.placeId) {
-            try {
-              await upsertVenue({
-                data: {
-                  label: venue.name,
-                  mapsUrl: venue.location,
-                  placeId: venue.placeId,
-                },
-              })
-            } catch (error) {
-              // Log error but don't fail session creation
-              console.error('Error saving venue:', error)
+          // Save all venues to database for future autocomplete
+          for (const venue of data.venues) {
+            if (venue.name && venue.location && venue.placeId) {
+              try {
+                await upsertVenue({
+                  data: {
+                    label: venue.name,
+                    mapsUrl: venue.location,
+                    placeId: venue.placeId,
+                  },
+                })
+              } catch (error) {
+                // Log error but don't fail session creation
+                console.error('Error saving venue:', error)
+              }
             }
           }
-        }
 
-        // Get primary venue for legacy fields
-        const primaryVenue =
-          data.venues.find((v) => v.isPrimary) || data.venues[0]
+          // Get primary venue for legacy fields
+          const primaryVenue =
+            data.venues.find((v) => v.isPrimary) || data.venues[0]
 
-        // Generate unique session ID
-        const uid = new ShortUniqueId({ length: 8 })
+          // Generate unique session ID
+          const uid = new ShortUniqueId({ length: 8 })
 
-        // Transform the nested structure into the database format
-        // Collect all unique time slots from all levels
-        const allTimeSlotsMap = new Map<
-          string,
-          { id: string; range: [Date, Date] }
-        >()
-        data.levels.forEach((levelData) => {
-          levelData.timeSlots.forEach((timeSlot) => {
-            if (!allTimeSlotsMap.has(timeSlot.id)) {
-              allTimeSlotsMap.set(timeSlot.id, timeSlot)
-            }
+          // Transform the nested structure into the database format
+          // Collect all unique time slots from all levels
+          const allTimeSlotsMap = new Map<
+            string,
+            { id: string; range: [Date, Date] }
+          >()
+          data.levels.forEach((levelData) => {
+            levelData.timeSlots.forEach((timeSlot) => {
+              if (!allTimeSlotsMap.has(timeSlot.id)) {
+                allTimeSlotsMap.set(timeSlot.id, timeSlot)
+              }
+            })
           })
-        })
 
-        // Build time slots with options
-        const timeSlots: TimeSlot[] = Array.from(allTimeSlotsMap.values()).map(
-          (timeSlot) => {
+          // Build time slots with options
+          const timeSlots: Array<TimeSlot> = Array.from(
+            allTimeSlotsMap.values(),
+          ).map((timeSlot) => {
             // For each time slot, find which levels have it
             const options = data.levels
               .filter((levelData) =>
@@ -1352,37 +1681,36 @@ export const createSession = createServerFn({ method: 'POST' })
               range: timeSlot.range,
               options,
             }
-          },
-        )
+          })
 
-        // Insert session into Supabase
-        const sessionData = {
-          public_id: uid.rnd(),
-          venue_name: primaryVenue.name,
-          venue_location: primaryVenue.location,
-          venues: JSON.stringify(data.venues),
-          // Combine session.date and session.time into a single ISO datetime string for the "date" field.
-          date: formatISO(data.date),
-          levels: data.levels.map((l) => l.level),
-          time_blocks: parseInt(data.timeBlocks),
-          time_slots: JSON.stringify(timeSlots),
-          limit_players: data.limitPlayers,
-          players_per_slot: data.playersPerSlot,
-          status: data.status || 'voting',
-          voting_closes_at: data.votingClosesAt
-            ? formatISO(data.votingClosesAt)
-            : null,
-        }
+          // Insert session into Supabase
+          const sessionData = {
+            public_id: uid.rnd(),
+            venue_name: primaryVenue.name,
+            venue_location: primaryVenue.location,
+            venues: JSON.stringify(data.venues),
+            // Combine session.date and session.time into a single ISO datetime string for the "date" field.
+            date: formatISO(data.date),
+            levels: data.levels.map((l) => l.level),
+            time_blocks: parseInt(data.timeBlocks),
+            time_slots: JSON.stringify(timeSlots),
+            limit_players: data.limitPlayers,
+            players_per_slot: data.playersPerSlot,
+            status: data.status || 'voting',
+            voting_closes_at: data.votingClosesAt
+              ? formatISO(data.votingClosesAt)
+              : null,
+          }
 
-        const { data: session, error } = await supabase
-          .from('sessions')
-          .insert(sessionData)
-          .select()
-          .single()
+          const { data: session, error } = await supabase
+            .from('sessions')
+            .insert(sessionData)
+            .select()
+            .single()
 
-        if (error) {
-          throw new Error(`Failed to create session: ${error.message}`)
-        }
+          if (error) {
+            throw new Error(`Failed to create session: ${error.message}`)
+          }
 
           return session.public_id
         } catch (error) {
@@ -1487,55 +1815,56 @@ export const updateSessionStatus = createServerFn({ method: 'POST' })
       try {
         const supabase = getSupabaseServerClient()
 
-      // Get session with current status
-      const { data: sessionRow, error: sessionError } = await supabase
-        .from('sessions')
-        .select('id, status')
-        .eq('public_id', data.sessionPublicId)
-        .single()
+        // Get session with current status
+        const { data: sessionRow, error: sessionError } = await supabase
+          .from('sessions')
+          .select('id, status')
+          .eq('public_id', data.sessionPublicId)
+          .single()
 
-      if (sessionError || !sessionRow) {
-        throw new Error('Session not found')
-      }
-
-      const previousStatus = sessionRow.status
-
-      // Update session status
-      const { error: updateError } = await supabase
-        .from('sessions')
-        .update({ status: data.status })
-        .eq('id', sessionRow.id)
-
-      if (updateError) {
-        throw new Error(
-          `Failed to update session status: ${updateError.message}`,
-        )
-      }
-
-      // If status changed from 'voting' to 'open', generate matches
-      if (previousStatus === 'voting' && data.status === 'open') {
-        // Check if matches already exist
-        const { count: matchesCount, error: matchesCheckError } = await supabase
-          .from('matches')
-          .select('*', { count: 'exact', head: true })
-          .eq('session_id', sessionRow.id)
-
-        if (matchesCheckError) {
-          console.error('Error checking existing matches:', matchesCheckError)
-          // Continue anyway - matches generation might still work
+        if (sessionError || !sessionRow) {
+          throw new Error('Session not found')
         }
 
-        // Only generate matches if they don't already exist
-        if (!matchesCount || matchesCount === 0) {
-          try {
-            await generateMatchesHelper(data.sessionPublicId)
-          } catch (generateError) {
-            console.error('Error generating matches:', generateError)
-            // Don't fail the status update if match generation fails
-            // Log the error but return success for status update
+        const previousStatus = sessionRow.status
+
+        // Update session status
+        const { error: updateError } = await supabase
+          .from('sessions')
+          .update({ status: data.status })
+          .eq('id', sessionRow.id)
+
+        if (updateError) {
+          throw new Error(
+            `Failed to update session status: ${updateError.message}`,
+          )
+        }
+
+        // If status changed from 'voting' to 'open', generate matches
+        if (previousStatus === 'voting' && data.status === 'open') {
+          // Check if matches already exist
+          const { count: matchesCount, error: matchesCheckError } =
+            await supabase
+              .from('matches')
+              .select('*', { count: 'exact', head: true })
+              .eq('session_id', sessionRow.id)
+
+          if (matchesCheckError) {
+            console.error('Error checking existing matches:', matchesCheckError)
+            // Continue anyway - matches generation might still work
+          }
+
+          // Only generate matches if they don't already exist
+          if (!matchesCount || matchesCount === 0) {
+            try {
+              await generateMatchesHelper(data.sessionPublicId)
+            } catch (generateError) {
+              console.error('Error generating matches:', generateError)
+              // Don't fail the status update if match generation fails
+              // Log the error but return success for status update
+            }
           }
         }
-      }
 
         return { success: true }
       } catch (error) {
@@ -1553,22 +1882,22 @@ export const deleteSession = createServerFn({ method: 'POST' })
       try {
         const supabase = getSupabaseServerClient()
 
-      // Get session ID from public_id
-      const { data: sessionRow, error: sessionError } = await supabase
-        .from('sessions')
-        .select('id')
-        .eq('public_id', data.sessionPublicId)
-        .single()
+        // Get session ID from public_id
+        const { data: sessionRow, error: sessionError } = await supabase
+          .from('sessions')
+          .select('id')
+          .eq('public_id', data.sessionPublicId)
+          .single()
 
-      if (sessionError || !sessionRow) {
-        throw new Error('Session not found')
-      }
+        if (sessionError || !sessionRow) {
+          throw new Error('Session not found')
+        }
 
-      // Delete session (cascading deletes will handle related records)
-      const { error: deleteError } = await supabase
-        .from('sessions')
-        .delete()
-        .eq('id', sessionRow.id)
+        // Delete session (cascading deletes will handle related records)
+        const { error: deleteError } = await supabase
+          .from('sessions')
+          .delete()
+          .eq('id', sessionRow.id)
 
         if (deleteError) {
           throw new Error(`Failed to delete session: ${deleteError.message}`)

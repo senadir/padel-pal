@@ -114,7 +114,8 @@ export const Route = createFileRoute('/sessions/new')({
       },
       {
         property: 'og:image',
-        content: '/api/og?title=Create%20Session&subtitle=Organize%20a%20new%20padel%20session&type=session',
+        content:
+          '/api/og?title=Create%20Session&subtitle=Organize%20a%20new%20padel%20session&type=session',
       },
       {
         name: 'twitter:title',
@@ -126,7 +127,8 @@ export const Route = createFileRoute('/sessions/new')({
       },
       {
         name: 'twitter:image',
-        content: '/api/og?title=Create%20Session&subtitle=Organize%20a%20new%20padel%20session&type=session',
+        content:
+          '/api/og?title=Create%20Session&subtitle=Organize%20a%20new%20padel%20session&type=session',
       },
     ],
   }),
@@ -322,29 +324,6 @@ function NewSession() {
                   value={field.state.value}
                   setValue={(value) => field.handleChange(value)}
                 />
-                {isInvalid && <FieldError errors={field.state.meta.errors} />}
-              </Field>
-            )
-          }}
-        </form.Field>
-        <form.Field name="votingClosesAt">
-          {(field) => {
-            const isInvalid =
-              field.state.meta.isTouched && !field.state.meta.isValid
-            return (
-              <Field data-invalid={isInvalid}>
-                <FieldLabel htmlFor={field.name}>
-                  Voting Deadline (Optional)
-                </FieldLabel>
-                <DateTimePicker
-                  value={field.state.value}
-                  setValue={(value) => field.handleChange(value)}
-                  showClearButton={true}
-                  onClear={() => field.handleChange(undefined)}
-                />
-                <FieldDescription>
-                  Set a deadline for when voting closes.
-                </FieldDescription>
                 {isInvalid && <FieldError errors={field.state.meta.errors} />}
               </Field>
             )
@@ -593,7 +572,7 @@ function NewSession() {
                 />
                 <FieldContent>
                   <FieldLabel htmlFor="limit-players">
-                    Limit players per slot
+                    Limit players per slot (Optional)
                   </FieldLabel>
                   <FieldDescription>
                     Limit the number of players who can sign up for a time slot
@@ -636,6 +615,29 @@ function NewSession() {
               )}
             </>
           )}
+        </form.Field>
+        <form.Field name="votingClosesAt">
+          {(field) => {
+            const isInvalid =
+              field.state.meta.isTouched && !field.state.meta.isValid
+            return (
+              <Field data-invalid={isInvalid}>
+                <FieldLabel htmlFor={field.name}>
+                  Voting Deadline (Optional)
+                </FieldLabel>
+                <DateTimePicker
+                  value={field.state.value}
+                  setValue={(value) => field.handleChange(value)}
+                  showClearButton={true}
+                  onClear={() => field.handleChange(undefined)}
+                />
+                <FieldDescription>
+                  Set a deadline for when voting closes.
+                </FieldDescription>
+                {isInvalid && <FieldError errors={field.state.meta.errors} />}
+              </Field>
+            )
+          }}
         </form.Field>
         <ButtonGroup className="w-full">
           <Button

@@ -1,9 +1,16 @@
 import { Link, useNavigate } from '@tanstack/react-router'
 import { format } from 'date-fns'
 import { useEffect, useMemo, useState } from 'react'
-import { EllipsisVertical, ExternalLink, Loader2 } from 'lucide-react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  Ban,
+  EllipsisVertical,
+  ExternalLink,
+  Loader2,
+  UserMinus,
+} from 'lucide-react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { Route } from '../$id'
 import type { Option, Player, Session } from '@/utils/types'
 import {
   Field,
@@ -17,20 +24,11 @@ import { SeparatorWithTitle } from '@/components/ui/separator-title'
 import { Button } from '@/components/ui/button'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { PlayerSearch } from '@/components/player-search'
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuGroup,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuPortal,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
-  DropdownMenuShortcut,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import {
@@ -55,11 +53,13 @@ import {
 } from '@/components/ui/alert-dialog'
 import {
   deleteSession,
+  toggleBlockPlayer,
+  unvoteForOption,
   updateSessionStatus,
   useVoteForSession,
+  voteForOption,
 } from '@/utils/sessions'
 import { useAuth, useIsOrganizer } from '@/contexts/auth'
-import { Route, sessionQueryOptions } from '../$id'
 
 export const VotingView = ({ session }: { session: Session }) => {
   const { slot } = Route.useSearch()
@@ -78,6 +78,7 @@ export const VotingView = ({ session }: { session: Session }) => {
 
   const { voteForSession: voteForSessionFn } = useVoteForSession({
     sessionId,
+    currentUserId: currentUser?.id ?? '',
   })
 
   // Wrap voting function to check authentication before allowing vote
@@ -125,7 +126,9 @@ export const VotingView = ({ session }: { session: Session }) => {
       }),
     onSuccess: (_data, status) => {
       queryClient.invalidateQueries({ queryKey: ['sessions'] })
-      queryClient.invalidateQueries({ queryKey: ['matches', sessionId] })
+      queryClient.invalidateQueries({
+        queryKey: ['sessions', sessionId, 'matches'],
+      })
 
       if (status === 'open') {
         toast.success('Poll closed and matches created')
@@ -262,11 +265,14 @@ export const VotingView = ({ session }: { session: Session }) => {
                   {activeOption.level} -{' '}
                   {format(activeOption.slot.range[0], 'HH:mm')}
                 </DrawerDialogTitle>
-                <DrawerDialogDescription className="text-center text-muted-foreground capitalize">
+                <DrawerDialogDescription className="text-center text-muted-foreground">
                   View all players and vote times
                 </DrawerDialogDescription>
               </DrawerDialogHeader>
-              <PlayerListDialog currentGame={activeOption} />
+              <PlayerListDialog
+                currentGame={activeOption}
+                sessionId={session.id}
+              />
             </>
           )}
           <DrawerDialogFooter>
@@ -410,7 +416,13 @@ const GameSlot = ({
   )
 }
 
-const PlayerListDialog = ({ currentGame }: { currentGame: Option }) => {
+const PlayerListDialog = ({
+  currentGame,
+  sessionId,
+}: {
+  currentGame: Option
+  sessionId: string
+}) => {
   return (
     <div className="flex flex-col gap-3 max-h-[60vh] overflow-auto p-4">
       {[...currentGame.players]
@@ -424,8 +436,23 @@ const PlayerListDialog = ({ currentGame }: { currentGame: Option }) => {
             key={player.id}
             player={player}
             option={currentGame}
+            sessionId={sessionId}
           />
         ))}
+      {/* Add player search (organizer only) */}
+      <PlayerSearch
+        excludeIds={currentGame.players.map((p) => p.id)}
+        onAddPlayer={(playerId) =>
+          voteForOption({
+            data: {
+              sessionPublicId: sessionId,
+              optionId: currentGame.id,
+              playerId,
+            },
+          })
+        }
+        successMessage="Player added to vote"
+      />
     </div>
   )
 }
@@ -433,11 +460,16 @@ const PlayerListDialog = ({ currentGame }: { currentGame: Option }) => {
 const PlayerListItem = ({
   player,
   option: currentGame,
+  sessionId,
 }: {
   player: Option['players'][number]
   option: Option
+  sessionId: string
 }) => {
   const [playerDialogOpen, setPlayerDialogOpen] = useState(false)
+  const { authData } = useAuth()
+  const currentUser = authData?.player
+
   return (
     <div className="flex items-center gap-3">
       <Avatar className="size-8">
@@ -457,17 +489,26 @@ const PlayerListItem = ({
             : 'No vote time'}
         </div>
       </div>
-      <DropdownMenu open={playerDialogOpen} onOpenChange={setPlayerDialogOpen}>
-        <DropdownMenuTrigger asChild>
-          <Button variant="ghost">
-            <span className="sr-only">Open menu</span>
-            <EllipsisVertical />
-          </Button>
-        </DropdownMenuTrigger>
-        {playerDialogOpen && (
-          <PlayerOptionDialog player={player} currentGame={currentGame} />
-        )}
-      </DropdownMenu>
+      {currentUser && (
+        <DropdownMenu
+          open={playerDialogOpen}
+          onOpenChange={setPlayerDialogOpen}
+        >
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon">
+              <span className="sr-only">Open menu</span>
+              <EllipsisVertical className="size-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          {playerDialogOpen && (
+            <PlayerOptionDialog
+              player={player}
+              currentGame={currentGame}
+              sessionId={sessionId}
+            />
+          )}
+        </DropdownMenu>
+      )}
     </div>
   )
 }
@@ -475,136 +516,118 @@ const PlayerListItem = ({
 const PlayerOptionDialog = ({
   player,
   currentGame,
+  sessionId,
 }: {
   player: Player
   currentGame: Option
+  sessionId: string
 }) => {
-  const { data: session } = useQuery(sessionQueryOptions(currentGame.slot.id))
-  const { authData } = useAuth()
-  const currentUser = authData?.player
+  const queryClient = useQueryClient()
+  const isOrganizer = useIsOrganizer()
 
-  if (!currentUser) {
-    return null
+  const handleCopyNumber = async () => {
+    if (!player.phone) {
+      toast.error('No phone number available')
+      return
+    }
+    await navigator.clipboard.writeText(player.phone)
+    toast.success('Phone number copied')
   }
-  const { voteForSession } = useVoteForSession({
-    sessionId: currentGame.slot.id,
+
+  // Remove vote mutation (organizer only)
+  const removeVoteMutation = useMutation({
+    mutationFn: () =>
+      unvoteForOption({
+        data: {
+          sessionPublicId: sessionId,
+          optionId: currentGame.id,
+          playerId: player.id,
+        },
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sessions', sessionId] })
+      toast.success(`${player.name || 'Player'}'s vote removed`)
+    },
+    onError: (error) => {
+      const errorMessage =
+        error instanceof Error ? error.message : 'An unexpected error occurred'
+      toast.error('Failed to remove vote', { description: errorMessage })
+    },
   })
-  if (!session) {
-    return null
-  }
 
-  const isSlotDisabled = (option: Option) => {
-    if (currentGame.slot.id === option.slot.id) {
-      return false
-    }
-    if (
-      session.timeSlots.some(
-        (slot) =>
-          slot.id !== currentGame.slot.id &&
-          slot.options.some((option) =>
-            option.players.some((_player) => _player.id === player.id),
-          ),
+  // Block player mutation (organizer only)
+  const blockPlayerMutation = useMutation({
+    mutationFn: () =>
+      toggleBlockPlayer({
+        data: {
+          playerId: player.id,
+          isBlocked: !player.is_blocked,
+        },
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sessions', sessionId] })
+      toast.success(
+        player.is_blocked
+          ? `${player.name || 'Player'} unblocked`
+          : `${player.name || 'Player'} blocked`,
       )
-    ) {
-      return true
-    }
-    return false
-  }
-
-  const filtered = session.timeSlots
-    .map((slot) => ({
-      ...slot,
-      options: slot.options.filter((option) =>
-        option.players.some((_player) => _player.id === player.id),
-      ),
-    }))
-    .filter((slot) => slot.options.length > 0)
-    .reduce<Record<string, string>>((acc, slot) => {
-      acc[slot.id] = slot.options[0].id
-      return acc
-    }, {})
+    },
+    onError: (error) => {
+      const errorMessage =
+        error instanceof Error ? error.message : 'An unexpected error occurred'
+      toast.error('Failed to update player', { description: errorMessage })
+    },
+  })
 
   return (
-    <DropdownMenuContent className="w-56" align="start">
-      <DropdownMenuLabel>Manage player</DropdownMenuLabel>
-      <DropdownMenuGroup>
-        <DropdownMenuItem>
-          Remove
-          <DropdownMenuShortcut>⌘D</DropdownMenuShortcut>
-        </DropdownMenuItem>
-        <DropdownMenuItem>
-          Block
-          <DropdownMenuShortcut>⌃⌘B</DropdownMenuShortcut>
-        </DropdownMenuItem>
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger>Move</DropdownMenuSubTrigger>
-          <DropdownMenuPortal>
-            <DropdownMenuSubContent>
-              {session.timeSlots.map((timeSlot) => (
-                <>
-                  <DropdownMenuLabel key={timeSlot.id}>
-                    {timeSlot.id}
-                  </DropdownMenuLabel>
-                  <DropdownMenuRadioGroup
-                    value={filtered[timeSlot.id] ?? ''}
-                    onValueChange={(value) => {
-                      const option = timeSlot.options.find(
-                        (opt) => opt.id === value,
-                      )
-                      if (option) {
-                        voteForSession({
-                          timeSlot: timeSlot.id,
-                          level: option.level,
-                          session,
-                          currentUser,
-                        })
-                      }
-                    }}
-                  >
-                    {timeSlot.options.map((option) => (
-                      <DropdownMenuRadioItem
-                        key={option.id}
-                        value={option.id}
-                        disabled={isSlotDisabled(option)}
-                      >
-                        {option.level}
-                      </DropdownMenuRadioItem>
-                    ))}
-                  </DropdownMenuRadioGroup>
-                  <DropdownMenuSeparator />
-                </>
-              ))}
-            </DropdownMenuSubContent>
-          </DropdownMenuPortal>
-        </DropdownMenuSub>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem>
-          Copy number
-          <DropdownMenuShortcut>⌃⌘C</DropdownMenuShortcut>
-        </DropdownMenuItem>
+    <DropdownMenuContent className="w-56" align="end">
+      <DropdownMenuItem onClick={handleCopyNumber} disabled={!player.phone}>
+        Copy number
+      </DropdownMenuItem>
+      {player.phone && (
         <DropdownMenuItem asChild>
           <a
-            href={`https://wa.me/${player.phone?.replace(/[^0-9]/g, '') ?? ''}`}
+            href={`https://wa.me/${player.phone.replace(/[^0-9]/g, '')}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-2"
           >
             Chat on WhatsApp
             <ExternalLink className="ml-auto h-3 w-3" />
           </a>
         </DropdownMenuItem>
+      )}
+      {player.playtomic_id && (
         <DropdownMenuItem asChild>
           <a
             href={`https://app.playtomic.io/profile/user/${player.playtomic_id}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-2"
           >
             Open in Playtomic
             <ExternalLink className="ml-auto h-3 w-3" />
           </a>
         </DropdownMenuItem>
-      </DropdownMenuGroup>
+      )}
+      {isOrganizer && (
+        <>
+          <DropdownMenuItem
+            onClick={() => removeVoteMutation.mutate()}
+            disabled={removeVoteMutation.isPending}
+            className="text-destructive focus:text-destructive"
+          >
+            <UserMinus className="mr-2 h-4 w-4" />
+            Remove vote
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => blockPlayerMutation.mutate()}
+            disabled={blockPlayerMutation.isPending}
+            className="text-destructive focus:text-destructive"
+          >
+            <Ban className="mr-2 h-4 w-4" />
+            {player.is_blocked ? 'Unblock player' : 'Block player'}
+          </DropdownMenuItem>
+        </>
+      )}
     </DropdownMenuContent>
   )
 }

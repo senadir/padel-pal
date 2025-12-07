@@ -226,11 +226,11 @@ max_frequency = "5s"
 "34603712987" = "000000"
 
 # Configure logged in session timeouts.
-# [auth.sessions]
-# Force log out after the specified duration.
-# timebox = "24h"
-# Force log out if the user has been inactive longer than the specified duration.
-# inactivity_timeout = "8h"
+[auth.sessions]
+# Force log out after the specified duration (1 year).
+timebox = "8760h"
+# Force log out if the user has been inactive longer than the specified duration (1 year).
+inactivity_timeout = "8760h"
 
 # This hook runs before a new user is created and allows developers to reject the request based on the incoming user object.
 # [auth.hook.before_user_created]
@@ -362,13 +362,13 @@ s3_access_key = "env(S3_ACCESS_KEY)"
 # Configures AWS_SECRET_ACCESS_KEY for S3 bucket
 s3_secret_key = "env(S3_SECRET_KEY)"
 
-[functions.handle-incoming-whatsapp]
-enabled = true
-verify_jwt = true
-import_map = "./functions/handle-incoming-whatsapp/deno.json"
-# Uncomment to specify a custom file path to the entrypoint.
-# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
-entrypoint = "./functions/handle-incoming-whatsapp/index.ts"
-# Specifies static files to be bundled with the function. Supports glob patterns.
-# For example, if you want to serve static HTML pages in your function:
-# static_files = [ "./functions/handle-incoming-whatsapp/*.html" ]
+# [functions.handle-incoming-whatsapp]
+# enabled = true
+# verify_jwt = true
+# import_map = "./functions/handle-incoming-whatsapp/deno.json"
+# # Uncomment to specify a custom file path to the entrypoint.
+# # Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+# entrypoint = "./functions/handle-incoming-whatsapp/index.ts"
+# # Specifies static files to be bundled with the function. Supports glob patterns.
+# # For example, if you want to serve static HTML pages in your function:
+# # static_files = [ "./functions/handle-incoming-whatsapp/*.html" ]

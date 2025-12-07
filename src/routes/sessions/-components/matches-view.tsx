@@ -1,10 +1,14 @@
 import { format } from 'date-fns'
-import { MapPin, Clock, ExternalLink, PlusIcon, Share2 } from 'lucide-react'
+import { Clock, ExternalLink, MapPin, PlusIcon, Share2 } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
+import { toast } from 'sonner'
+import { cva } from 'class-variance-authority'
+import { useSuspenseQuery } from '@tanstack/react-query'
 import type {
   Match,
-  Session,
   MatchPlayer,
   PlayerSyncStatus,
+  Session,
 } from '@/utils/types'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -15,12 +19,13 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { toast } from 'sonner'
-import { cva } from 'class-variance-authority'
 import { computePlayerSyncStatus } from '@/utils/match-sync'
+import { cn } from '@/lib/utils'
+import { useAuth } from '@/contexts/auth'
+import { matchQueryOptions } from '@/utils/sessions'
 
 interface MatchesViewProps {
-  matches: Match[]
+  matches: Array<Match>
   session: Session
 }
 
@@ -82,12 +87,16 @@ const getPlayerSyncStatusTooltip = (syncStatus: PlayerSyncStatus) => {
 }
 
 function MatchCard({ match, session }: { match: Match; session: Session }) {
+  const { authData } = useAuth()
+  const currentUser = authData?.player
+  const { data: matches } = useSuspenseQuery(matchQueryOptions(session.id))
+
   const startTime = format(new Date(match.slot.range[0]), 'HH:mm')
   const endTime = format(new Date(match.slot.range[1]), 'HH:mm')
-  const sessionDate = format(new Date(session.date), 'EEEE, MMMM do')
+  const sessionDate = format(new Date(session.date), 'EEE, MMM do')
 
   // Compute synced players with status
-  const syncedPlayers: MatchPlayer[] = match.playtomicMatch
+  const syncedPlayers: Array<MatchPlayer> = match.playtomicMatch
     ? computePlayerSyncStatus(
         match.players,
         match.playtomicMatch.playtomic_players,
@@ -107,7 +116,7 @@ function MatchCard({ match, session }: { match: Match; session: Session }) {
       playerNames ? `Players: ${playerNames}` : 'Join us!',
     ].join('\n')
 
-    if (navigator.share) {
+    if (typeof navigator.share !== 'undefined') {
       await navigator.share({
         title: `${match.level} Padel Match`,
         text: shareText,
@@ -118,6 +127,43 @@ function MatchCard({ match, session }: { match: Match; session: Session }) {
       await navigator.clipboard.writeText(`${shareText}\n\n${shareUrl}`)
       toast.success('Copied to clipboard')
     }
+  }
+
+  /**
+   * Can the current user join this match?
+   * - If currentUser is not defined: true (allow join for guests, will prompt login)
+   * - Else, return true if the user is not already in this match,
+   *   AND the user is not already in another match with an overlapping time slot
+   */
+  const canJoinMatch = (matchId: string): boolean => {
+    if (!currentUser) return true
+
+    // Find this match
+    const targetMatch = matches.find((m) => m.id === matchId)
+    if (!targetMatch) return true // Defensive: if match not found, allow
+
+    // Is current user already in this match?
+    if (targetMatch.players.some((p) => p.id === currentUser.id)) {
+      return false
+    }
+
+    // Is current user in a conflicting match (overlapping time slot)?
+    const targetStart = new Date(targetMatch.slot.range[0])
+    const targetEnd = new Date(targetMatch.slot.range[1])
+
+    const hasOverlap = matches.some((m) => {
+      if (m.id === matchId) return false // exclude this match itself
+      // Is user in this match?
+      const isInThisMatch = m.players.some((p) => p.id === currentUser.id)
+      if (!isInThisMatch) return false
+      // Check for overlap in time
+      const mStart = new Date(m.slot.range[0])
+      const mEnd = new Date(m.slot.range[1])
+      // Overlaps if starts before other's end and ends after other's start
+      return mStart < targetEnd && mEnd > targetStart
+    })
+
+    return !hasOverlap
   }
 
   return (
@@ -170,9 +216,12 @@ function MatchCard({ match, session }: { match: Match; session: Session }) {
 
         {/* Player Avatars */}
         <div className="flex gap-2">
-          {syncedPlayers.map((player) => (
-            <Tooltip key={player.id}>
-              <TooltipTrigger asChild>
+          {syncedPlayers.map((player) => {
+            const avatarElement = (
+              <Link
+                to="/sessions/$id/$matchId"
+                params={{ id: session.id, matchId: match.id }}
+              >
                 <Avatar
                   className={playerAvatarVariants({
                     syncStatus: player.syncStatus,
@@ -186,23 +235,46 @@ function MatchCard({ match, session }: { match: Match; session: Session }) {
                     {player.name?.charAt(0).toUpperCase() || 'P'}
                   </AvatarFallback>
                 </Avatar>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>{getPlayerSyncStatusTooltip(player.syncStatus)}</p>
-              </TooltipContent>
-            </Tooltip>
-          ))}
-          {/* Show empty slots */}
+              </Link>
+            )
+
+            // Only show tooltip when match is connected to Playtomic
+            if (!match.playtomicMatch) {
+              return <div key={player.id}>{avatarElement}</div>
+            }
+
+            return (
+              <Tooltip key={player.id}>
+                <TooltipTrigger asChild>{avatarElement}</TooltipTrigger>
+                <TooltipContent>
+                  <p>{getPlayerSyncStatusTooltip(player.syncStatus)}</p>
+                </TooltipContent>
+              </Tooltip>
+            )
+          })}
+          {/* Show empty slots - clickable to join */}
           {Array.from({ length: Math.max(0, 4 - syncedPlayers.length) }).map(
             (_, i) => (
-              <Avatar
+              <Link
                 key={`empty-${i}`}
-                className="size-10 border-2 border-dashed"
+                to="/sessions/$id/$matchId"
+                params={{ id: session.id, matchId: match.id }}
               >
-                <AvatarFallback className="bg-muted/50">
-                  <PlusIcon className="h-4 w-4 text-muted-foreground" />
-                </AvatarFallback>
-              </Avatar>
+                <Avatar
+                  className={cn(
+                    'size-10 border-2 border-dashed  transition-colors cursor-default',
+                    {
+                      'cursor-pointer hover:border-primary': canJoinMatch(
+                        match.id,
+                      ),
+                    },
+                  )}
+                >
+                  <AvatarFallback className="bg-muted/50">
+                    <PlusIcon className="h-4 w-4 text-muted-foreground" />
+                  </AvatarFallback>
+                </Avatar>
+              </Link>
             ),
           )}
         </div>
@@ -220,8 +292,13 @@ function MatchCard({ match, session }: { match: Match; session: Session }) {
             </a>
           </Button>
         ) : (
-          <Button className="w-full" disabled variant="outline" size="lg">
-            Not on playtomic yet
+          <Button className="w-full" asChild variant="outline" size="lg">
+            <Link
+              to="/sessions/$id/$matchId"
+              params={{ id: session.id, matchId: match.id }}
+            >
+              {canJoinMatch(match.id) ? 'Join match' : 'Match details'}
+            </Link>
           </Button>
         )}
       </CardContent>
