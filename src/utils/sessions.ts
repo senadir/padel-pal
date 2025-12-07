@@ -612,6 +612,16 @@ export const voteForOption = createServerFn({ method: 'POST' })
 
       if (error) {
         console.error('Error voting:', error)
+        // Check for common error cases and provide user-friendly messages
+        if (error.message.includes('row-level security policy')) {
+          throw new Error(
+            'Unable to add vote. The player may already have a vote in this time slot.',
+          )
+        }
+        if (error.code === '23505') {
+          // Unique constraint violation
+          throw new Error('This player has already voted for this option.')
+        }
         throw new Error(`Failed to vote: ${error.message}`)
       }
 

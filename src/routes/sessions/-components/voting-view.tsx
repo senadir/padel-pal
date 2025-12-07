@@ -1,7 +1,13 @@
 import { Link, useNavigate } from '@tanstack/react-router'
 import { format } from 'date-fns'
 import { useEffect, useMemo, useState } from 'react'
-import { EllipsisVertical, ExternalLink, Loader2 } from 'lucide-react'
+import {
+  Ban,
+  EllipsisVertical,
+  ExternalLink,
+  Loader2,
+  UserMinus,
+} from 'lucide-react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Route } from '../$id'
@@ -18,6 +24,7 @@ import { SeparatorWithTitle } from '@/components/ui/separator-title'
 import { Button } from '@/components/ui/button'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { PlayerSearch } from '@/components/player-search'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -46,8 +53,11 @@ import {
 } from '@/components/ui/alert-dialog'
 import {
   deleteSession,
+  toggleBlockPlayer,
+  unvoteForOption,
   updateSessionStatus,
   useVoteForSession,
+  voteForOption,
 } from '@/utils/sessions'
 import { useAuth, useIsOrganizer } from '@/contexts/auth'
 
@@ -255,11 +265,14 @@ export const VotingView = ({ session }: { session: Session }) => {
                   {activeOption.level} -{' '}
                   {format(activeOption.slot.range[0], 'HH:mm')}
                 </DrawerDialogTitle>
-                <DrawerDialogDescription className="text-center text-muted-foreground capitalize">
+                <DrawerDialogDescription className="text-center text-muted-foreground">
                   View all players and vote times
                 </DrawerDialogDescription>
               </DrawerDialogHeader>
-              <PlayerListDialog currentGame={activeOption} sessionId={session.id} />
+              <PlayerListDialog
+                currentGame={activeOption}
+                sessionId={session.id}
+              />
             </>
           )}
           <DrawerDialogFooter>
@@ -426,6 +439,20 @@ const PlayerListDialog = ({
             sessionId={sessionId}
           />
         ))}
+      {/* Add player search (organizer only) */}
+      <PlayerSearch
+        excludeIds={currentGame.players.map((p) => p.id)}
+        onAddPlayer={(playerId) =>
+          voteForOption({
+            data: {
+              sessionPublicId: sessionId,
+              optionId: currentGame.id,
+              playerId,
+            },
+          })
+        }
+        successMessage="Player added to vote"
+      />
     </div>
   )
 }
@@ -463,7 +490,10 @@ const PlayerListItem = ({
         </div>
       </div>
       {currentUser && (
-        <DropdownMenu open={playerDialogOpen} onOpenChange={setPlayerDialogOpen}>
+        <DropdownMenu
+          open={playerDialogOpen}
+          onOpenChange={setPlayerDialogOpen}
+        >
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon">
               <span className="sr-only">Open menu</span>
@@ -485,11 +515,16 @@ const PlayerListItem = ({
 
 const PlayerOptionDialog = ({
   player,
+  currentGame,
+  sessionId,
 }: {
   player: Player
   currentGame: Option
   sessionId: string
 }) => {
+  const queryClient = useQueryClient()
+  const isOrganizer = useIsOrganizer()
+
   const handleCopyNumber = async () => {
     if (!player.phone) {
       toast.error('No phone number available')
@@ -498,6 +533,51 @@ const PlayerOptionDialog = ({
     await navigator.clipboard.writeText(player.phone)
     toast.success('Phone number copied')
   }
+
+  // Remove vote mutation (organizer only)
+  const removeVoteMutation = useMutation({
+    mutationFn: () =>
+      unvoteForOption({
+        data: {
+          sessionPublicId: sessionId,
+          optionId: currentGame.id,
+          playerId: player.id,
+        },
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sessions', sessionId] })
+      toast.success(`${player.name || 'Player'}'s vote removed`)
+    },
+    onError: (error) => {
+      const errorMessage =
+        error instanceof Error ? error.message : 'An unexpected error occurred'
+      toast.error('Failed to remove vote', { description: errorMessage })
+    },
+  })
+
+  // Block player mutation (organizer only)
+  const blockPlayerMutation = useMutation({
+    mutationFn: () =>
+      toggleBlockPlayer({
+        data: {
+          playerId: player.id,
+          isBlocked: !player.is_blocked,
+        },
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sessions', sessionId] })
+      toast.success(
+        player.is_blocked
+          ? `${player.name || 'Player'} unblocked`
+          : `${player.name || 'Player'} blocked`,
+      )
+    },
+    onError: (error) => {
+      const errorMessage =
+        error instanceof Error ? error.message : 'An unexpected error occurred'
+      toast.error('Failed to update player', { description: errorMessage })
+    },
+  })
 
   return (
     <DropdownMenuContent className="w-56" align="end">
@@ -527,6 +607,26 @@ const PlayerOptionDialog = ({
             <ExternalLink className="ml-auto h-3 w-3" />
           </a>
         </DropdownMenuItem>
+      )}
+      {isOrganizer && (
+        <>
+          <DropdownMenuItem
+            onClick={() => removeVoteMutation.mutate()}
+            disabled={removeVoteMutation.isPending}
+            className="text-destructive focus:text-destructive"
+          >
+            <UserMinus className="mr-2 h-4 w-4" />
+            Remove vote
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => blockPlayerMutation.mutate()}
+            disabled={blockPlayerMutation.isPending}
+            className="text-destructive focus:text-destructive"
+          >
+            <Ban className="mr-2 h-4 w-4" />
+            {player.is_blocked ? 'Unblock player' : 'Block player'}
+          </DropdownMenuItem>
+        </>
       )}
     </DropdownMenuContent>
   )
