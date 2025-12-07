@@ -1,6 +1,6 @@
 import {
-  createFileRoute,
   Link,
+  createFileRoute,
   redirect,
   useSearch,
 } from '@tanstack/react-router'
@@ -8,8 +8,8 @@ import { useEffect } from 'react'
 import { toast } from 'sonner'
 import { format, subDays } from 'date-fns'
 import { z } from 'zod'
+import { CalendarPlus, ChevronRight, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { ChevronRight, CalendarPlus, Plus } from 'lucide-react'
 import {
   Empty,
   EmptyContent,
@@ -37,7 +37,8 @@ export const Route = createFileRoute('/')({
       },
       {
         property: 'og:image',
-        content: '/api/og?title=Open%20Sessions&subtitle=Browse%20and%20join%20padel%20sessions&type=session',
+        content:
+          '/api/og?title=Open%20Sessions&subtitle=Browse%20and%20join%20padel%20sessions&type=session',
       },
       {
         name: 'twitter:title',
@@ -49,7 +50,8 @@ export const Route = createFileRoute('/')({
       },
       {
         name: 'twitter:image',
-        content: '/api/og?title=Open%20Sessions&subtitle=Browse%20and%20join%20padel%20sessions&type=session',
+        content:
+          '/api/og?title=Open%20Sessions&subtitle=Browse%20and%20join%20padel%20sessions&type=session',
       },
     ],
   }),
@@ -164,19 +166,21 @@ function App() {
         <>
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-3xl font-bold">Open sessions</h1>
+              <div className="flex items-baseline justify-between">
+                <h1 className="text-3xl font-bold">Open sessions</h1>
+                {isOrganizer && (
+                  <Button asChild size="icon" variant="ghost">
+                    <Link to="/sessions/new">
+                      <Plus className="h-4 w-4" />
+                      <span className="sr-only">Create session</span>
+                    </Link>
+                  </Button>
+                )}
+              </div>
               <p className="text-muted-foreground mt-1">
                 Below are the open sessions that you can vote for or join.
               </p>
             </div>
-            {isOrganizer && (
-              <Button asChild size="icon" variant="outline">
-                <Link to="/sessions/new">
-                  <Plus className="h-4 w-4" />
-                  <span className="sr-only">Create session</span>
-                </Link>
-              </Button>
-            )}
           </div>
           <div className="flex flex-col gap-4">
             {sessions.map((session) => {
