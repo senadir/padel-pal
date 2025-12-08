@@ -2,13 +2,13 @@ import { createFileRoute } from '@tanstack/react-router'
 import { ImageResponse } from 'workers-og'
 import { createServerClient } from '@supabase/ssr'
 import { format, formatDistanceToNow } from 'date-fns'
-import type { Database } from '@/utils/database.types'
-import type { TimeSlot } from '@/utils/types'
-import Logo from '../../../public/favicon.svg'
-import { padelOgImage } from '@/assets/padel-og-base64'
 import { env } from 'cloudflare:workers'
 import UPNG from 'upng-js'
 import jpeg from 'jpeg-js'
+import Logo from '../../../public/favicon.svg'
+import type { Database } from '@/utils/database.types'
+import type { TimeSlot } from '@/utils/types'
+import { padelOgImage } from '@/assets/padel-og-base64'
 
 // =============================================================================
 // Image Compression
@@ -78,7 +78,10 @@ async function getCachedImage(cacheKey: string): Promise<Response | null> {
   return null
 }
 
-async function cacheImage(cacheKey: string, imageBuffer: Buffer): Promise<void> {
+async function cacheImage(
+  cacheKey: string,
+  imageBuffer: Buffer,
+): Promise<void> {
   try {
     await env.OG_IMAGES.put(cacheKey, imageBuffer, {
       httpMetadata: { contentType: 'image/jpeg' },
@@ -131,7 +134,7 @@ type SessionData = {
   status: 'voting' | 'open' | 'closed' | 'cancelled' | 'draft'
   votingClosesAt: Date | null
   openMatchesCount: number
-  levels: string[]
+  levels: Array<string>
 }
 
 type OGData = MatchData | SessionData | null
@@ -142,8 +145,8 @@ type OGData = MatchData | SessionData | null
 
 function getSupabaseClient() {
   return createServerClient<Database>(
-    process.env.VITE_SUPABASE_URL!,
-    process.env.VITE_SUPABASE_PUBLIC_KEY!,
+    process.env.VITE_SUPABASE_URL,
+    process.env.VITE_SUPABASE_PUBLIC_KEY,
     {
       cookies: {
         getAll: () => [],
@@ -243,11 +246,11 @@ async function fetchSessionData(
     .select('*')
     .eq('session_id', sessionRow.id)
 
-  let levels: string[] = []
+  let levels: Array<string> = []
   if (matches && matches.length > 0) {
     levels = matches.map((match) => match.level)
   } else {
-    levels = (JSON.parse(sessionRow.time_slots as string) as TimeSlot[])
+    levels = (JSON.parse(sessionRow.time_slots as string) as Array<TimeSlot>)
       .map((slot) => slot.options.map((option) => option.level))
       .flat()
   }
@@ -535,7 +538,7 @@ function StatusRow({
   )
 }
 
-function LevelBadges({ levels }: { levels: string[] }) {
+function LevelBadges({ levels }: { levels: Array<string> }) {
   return (
     <div
       style={{

@@ -3,8 +3,8 @@ import { createClient } from '@supabase/supabase-js'
 import type { Database, Json } from '@/utils/database.types'
 import type {
   PlaytomicApiMatch,
-  PlaytomicApiUser,
   PlaytomicApiURL,
+  PlaytomicApiUser,
 } from '@/utils/playtomic.types.ts'
 
 // =============================================================================
@@ -33,7 +33,7 @@ interface PlaytomicMatchDetails {
   courtName: string
   startTime: string
   endTime: string
-  players: PlaytomicPlayerData[]
+  players: Array<PlaytomicPlayerData>
 }
 
 interface PlaytomicPlayerData {
@@ -49,7 +49,7 @@ interface PlaytomicPlayerData {
 
 function getSupabaseServiceClient() {
   return createClient<Database>(
-    process.env.VITE_SUPABASE_URL!,
+    process.env.VITE_SUPABASE_URL,
     process.env.VITE_SUPABASE_PRIVATE_KEY!,
   )
 }
@@ -114,7 +114,7 @@ async function resolvePlaytomicMatchId(
       const res = await fetch(
         `https://api.playtomic.io/v1/short_urls/${link.shortCode}`,
       )
-      const data = (await res.json()) as PlaytomicApiURL
+      const data = await res.json()
       const uuidMatch = data.full_url.match(
         /[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/i,
       )
@@ -145,7 +145,7 @@ async function fetchPlaytomicMatch(
     const res = await fetch(`https://api.playtomic.io/v1/matches/${matchId}`)
     if (!res.ok) return null
 
-    const data = (await res.json()) as PlaytomicApiMatch
+    const data = await res.json()
 
     // Extract player IDs from teams
     const rawPlayers = [
@@ -165,14 +165,14 @@ async function fetchPlaytomicMatch(
       .filter(Boolean)
 
     // Fetch full player details
-    let playerDetails: PlaytomicApiUser[] = []
+    let playerDetails: Array<PlaytomicApiUser> = []
     if (playerIds.length > 0) {
       try {
         const usersRes = await fetch(
           `https://api.playtomic.io/v2/users?user_id=${playerIds.join(',')}`,
         )
         if (usersRes.ok) {
-          const usersData = (await usersRes.json()) as PlaytomicApiUser[]
+          const usersData = await usersRes.json()
 
           playerDetails = Array.isArray(usersData) ? usersData : []
         }
@@ -191,7 +191,7 @@ async function fetchPlaytomicMatch(
       ]) ?? [],
     )
 
-    const players: PlaytomicPlayerData[] = playerIds.map((id) => {
+    const players: Array<PlaytomicPlayerData> = playerIds.map((id) => {
       const details = playerMap.get(id)
       return {
         id,
@@ -232,7 +232,7 @@ async function findPlayerByPhone(phone: string) {
 
 async function findActiveMatchesForPlayer(
   playerId: string,
-): Promise<ActiveMatch[]> {
+): Promise<Array<ActiveMatch>> {
   const supabase = getSupabaseServiceClient()
 
   const { data, error } = await supabase

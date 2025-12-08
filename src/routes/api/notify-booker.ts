@@ -1,9 +1,10 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { createClient, SupabaseClient } from '@supabase/supabase-js'
-import { format } from 'date-fns'
 import { timingSafeEqual } from 'node:crypto'
-import { sendBookerNotification } from '@/utils/twilio'
+import { createFileRoute } from '@tanstack/react-router'
+import { createClient } from '@supabase/supabase-js'
+import { format } from 'date-fns'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/utils/database.types'
+import { sendBookerNotification } from '@/utils/twilio'
 
 /**
  * Timing-safe string comparison to prevent timing attacks
@@ -81,7 +82,7 @@ export const Route = createFileRoute('/api/notify-booker')({
             })
           }
 
-          const payload = (await request.json()) as SupabaseWebhookPayload
+          const payload = await request.json()
           console.log('Received Supabase webhook:', payload.table, payload.type)
 
           // Create Supabase client with service role for full access
