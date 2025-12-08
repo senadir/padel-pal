@@ -1,13 +1,8 @@
 import { format } from 'date-fns'
-import {
-  Clock,
-  Loader2,
-  UserRound,
-  ChevronDown,
-  Check,
-} from 'lucide-react'
+import { Check, ChevronDown, Clock, Loader2, UserRound } from 'lucide-react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { cva } from 'class-variance-authority'
 import type { Match, Session } from '@/utils/types'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -21,11 +16,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { cva } from 'class-variance-authority'
 import { updateMatchBooker, updateSessionStatus } from '@/utils/sessions'
 
 interface PollClosedViewProps {
-  matches: Match[]
+  matches: Array<Match>
   session: Session
 }
 
@@ -40,7 +34,6 @@ export function PollClosedView({ matches, session }: PollClosedViewProps) {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sessions'] })
-      queryClient.invalidateQueries({ queryKey: ['matches', session.id] })
       toast.success('Session opened! Bookers have been notified via WhatsApp.')
     },
     onError: (error) => {
@@ -120,7 +113,9 @@ function MatchCard({ match, session }: { match: Match; session: Session }) {
         data: { matchPublicId: match.id, participantId },
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['matches', session.id] })
+      queryClient.invalidateQueries({
+        queryKey: ['sessions', session.id, 'matches'],
+      })
       toast.success('Booker updated')
     },
     onError: (error) => {
@@ -144,7 +139,15 @@ function MatchCard({ match, session }: { match: Match; session: Session }) {
               {startTime} - {endTime}
             </span>
           </div>
-          <Badge className={levelBadgeVariants({ level: match.level as 'beginner' | 'improver' | 'intermediate' | 'advanced' })}>
+          <Badge
+            className={levelBadgeVariants({
+              level: match.level as
+                | 'beginner'
+                | 'improver'
+                | 'intermediate'
+                | 'advanced',
+            })}
+          >
             {match.level}
           </Badge>
         </div>
@@ -220,7 +223,7 @@ function MatchCard({ match, session }: { match: Match; session: Session }) {
                   <DropdownMenuItem
                     key={player.id}
                     onClick={() => {
-                      updateBookerMutation.mutate(player.participantId!)
+                      updateBookerMutation.mutate(player.participantId)
                     }}
                     className="gap-2"
                   >

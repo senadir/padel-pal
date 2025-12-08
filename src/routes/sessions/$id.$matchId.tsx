@@ -367,7 +367,9 @@ const MatchPlayerOptionDialog = ({
     },
     onSuccess: () => {
       toast.success(`${player.name} is now the booker`)
-      queryClient.invalidateQueries({ queryKey: ['matches', sessionId] })
+      queryClient.invalidateQueries({
+        queryKey: ['sessions', sessionId, 'matches'],
+      })
       onClose()
     },
     onError: (error) => {
