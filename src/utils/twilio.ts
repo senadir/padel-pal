@@ -25,6 +25,14 @@ function isValidE164(phone: string): boolean {
   return E164_REGEX.test(phone)
 }
 
+/**
+ * Masks a phone number for safe logging (shows last 4 digits only)
+ */
+function maskPhone(phone: string): string {
+  if (phone.length <= 4) return '****'
+  return `****${phone.slice(-4)}`
+}
+
 interface SendBookerNotificationParams {
   toPhone: string // Phone number in E.164 format (e.g., +34612345678)
   venueName: string
@@ -58,7 +66,7 @@ export async function sendBookerNotification(
   if (!isValidE164(params.toPhone)) {
     return {
       success: false,
-      error: `Invalid phone number format: ${params.toPhone}. Expected E.164 format (e.g., +34612345678)`,
+      error: `Invalid phone number format: ${maskPhone(params.toPhone)}. Expected E.164 format (e.g., +34612345678)`,
     }
   }
 

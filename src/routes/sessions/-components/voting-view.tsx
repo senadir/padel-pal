@@ -132,6 +132,12 @@ export const VotingView = ({ session }: { session: Session }) => {
       }),
     onSuccess: (_data, status) => {
       queryClient.invalidateQueries({ queryKey: ['sessions'] })
+      // Also invalidate matches when poll closes since matches are created
+      if (status === 'poll_closed') {
+        queryClient.invalidateQueries({
+          queryKey: ['sessions', sessionId, 'matches'],
+        })
+      }
 
       if (status === 'poll_closed') {
         toast.success(

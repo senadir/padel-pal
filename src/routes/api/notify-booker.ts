@@ -1,8 +1,26 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { format } from 'date-fns'
+import { timingSafeEqual } from 'node:crypto'
 import { sendBookerNotification } from '@/utils/twilio'
 import type { Database } from '@/utils/database.types'
+
+/**
+ * Timing-safe string comparison to prevent timing attacks
+ */
+function safeCompare(a: string, b: string): boolean {
+  try {
+    const bufA = Buffer.from(a)
+    const bufB = Buffer.from(b)
+    // timingSafeEqual requires same length buffers
+    if (bufA.length !== bufB.length) {
+      return false
+    }
+    return timingSafeEqual(bufA, bufB)
+  } catch {
+    return false
+  }
+}
 
 /**
  * Webhook endpoint for sending booker notifications.
@@ -54,7 +72,8 @@ export const Route = createFileRoute('/api/notify-booker')({
             )
           }
 
-          if (authHeader !== `Bearer ${expectedSecret}`) {
+          const expectedAuth = `Bearer ${expectedSecret}`
+          if (!authHeader || !safeCompare(authHeader, expectedAuth)) {
             console.error('Unauthorized webhook request')
             return new Response(JSON.stringify({ error: 'Unauthorized' }), {
               status: 401,

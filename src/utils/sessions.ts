@@ -1569,10 +1569,11 @@ export const useMatchActions = ({
       })
     },
     onSuccess: (_data, matchPublicId) => {
-      // Get match data from query cache
+      // Get match data from query cache (using same key as matchQueryOptions)
       const matches = queryClient.getQueryData<Array<Match>>([
-        'matches',
+        'sessions',
         sessionId,
+        'matches',
       ])
       const match = matches?.find((m) => m.id === matchPublicId)
 
@@ -1610,10 +1611,11 @@ export const useMatchActions = ({
       })
     },
     onSuccess: (_data, matchPublicId) => {
-      // Get match data from query cache
+      // Get match data from query cache (using same key as matchQueryOptions)
       const matches = queryClient.getQueryData<Array<Match>>([
-        'matches',
+        'sessions',
         sessionId,
+        'matches',
       ])
       const match = matches?.find((m) => m.id === matchPublicId)
 

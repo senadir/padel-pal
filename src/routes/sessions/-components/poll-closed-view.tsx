@@ -83,6 +83,13 @@ export function PollClosedView({ matches, session }: PollClosedViewProps) {
   )
 }
 
+const VALID_LEVELS = ['beginner', 'improver', 'intermediate', 'advanced'] as const
+type ValidLevel = (typeof VALID_LEVELS)[number]
+
+function isValidLevel(level: string): level is ValidLevel {
+  return VALID_LEVELS.includes(level as ValidLevel)
+}
+
 const levelBadgeVariants = cva('capitalize', {
   variants: {
     level: {
@@ -141,11 +148,7 @@ function MatchCard({ match, session }: { match: Match; session: Session }) {
           </div>
           <Badge
             className={levelBadgeVariants({
-              level: match.level as
-                | 'beginner'
-                | 'improver'
-                | 'intermediate'
-                | 'advanced',
+              level: isValidLevel(match.level) ? match.level : 'beginner',
             })}
           >
             {match.level}
@@ -223,7 +226,7 @@ function MatchCard({ match, session }: { match: Match; session: Session }) {
                   <DropdownMenuItem
                     key={player.id}
                     onClick={() => {
-                      updateBookerMutation.mutate(player.participantId)
+                      updateBookerMutation.mutate(player.participantId!)
                     }}
                     className="gap-2"
                   >
