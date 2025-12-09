@@ -27,7 +27,7 @@ interface MatchWithPlaytomic {
   playtomic: {
     playtomic_match_id: string
     match_url: string
-    playtomic_players: PlaytomicPlayerData[]
+    playtomic_players: Array<PlaytomicPlayerData>
     start_time: string
     end_time: string
   } | null
@@ -40,7 +40,7 @@ interface SyncResult {
     playersAdded: number
     playersAlreadyInMatch: number
     playersNotInDb: number
-    playtomicPlayers: PlaytomicPlayerData[]
+    playtomicPlayers: Array<PlaytomicPlayerData>
   }
 }
 
@@ -50,7 +50,7 @@ interface SyncResult {
 
 function getSupabaseServiceClient() {
   return createClient<Database>(
-    process.env.VITE_SUPABASE_URL!,
+    process.env.VITE_SUPABASE_URL,
     process.env.VITE_SUPABASE_PRIVATE_KEY!,
   )
 }
@@ -61,14 +61,14 @@ function getSupabaseServiceClient() {
 
 async function fetchAndUpdatePlaytomicMatch(
   playtomicMatchId: string,
-): Promise<PlaytomicPlayerData[] | null> {
+): Promise<Array<PlaytomicPlayerData> | null> {
   try {
     const res = await fetch(
       `https://api.playtomic.io/v1/matches/${playtomicMatchId}`,
     )
     if (!res.ok) return null
 
-    const data = (await res.json()) as PlaytomicApiMatch
+    const data = await res.json()
 
     // Extract player IDs from teams
     const rawPlayers = [
@@ -88,7 +88,7 @@ async function fetchAndUpdatePlaytomicMatch(
       .filter(Boolean)
 
     // Fetch full player details
-    let playerDetails: PlaytomicApiUser[] = []
+    let playerDetails: Array<PlaytomicApiUser> = []
 
     if (playerIds.length > 0) {
       try {
@@ -96,7 +96,7 @@ async function fetchAndUpdatePlaytomicMatch(
           `https://api.playtomic.io/v2/users?user_id=${playerIds.join(',')}`,
         )
         if (usersRes.ok) {
-          const usersData = (await usersRes.json()) as PlaytomicApiUser[]
+          const usersData = await usersRes.json()
 
           playerDetails = Array.isArray(usersData) ? usersData : []
         }
@@ -115,7 +115,7 @@ async function fetchAndUpdatePlaytomicMatch(
       ]) ?? [],
     )
 
-    const players: PlaytomicPlayerData[] = playerIds.map((id) => {
+    const players: Array<PlaytomicPlayerData> = playerIds.map((id) => {
       const details = playerMap.get(id)
       return {
         id,
@@ -192,7 +192,7 @@ async function getMatchByPublicId(
 }
 
 async function findPlayersByPlaytomicIds(
-  playtomicIds: string[],
+  playtomicIds: Array<string>,
 ): Promise<Map<number, string>> {
   if (playtomicIds.length === 0) return new Map()
 

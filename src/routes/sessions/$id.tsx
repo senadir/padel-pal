@@ -5,8 +5,10 @@ import { format } from 'date-fns'
 import { CircleAlert } from 'lucide-react'
 import { MatchesView } from './-components/matches-view'
 import { VotingView } from './-components/voting-view'
+import { PollClosedView } from './-components/poll-closed-view'
 import { FieldDescription, FieldLegend, FieldSet } from '@/components/ui/field'
 import { matchQueryOptions, sessionQueryOptions } from '@/utils/sessions'
+import { useIsOrganizer } from '@/contexts/auth'
 
 export const Route = createFileRoute('/sessions/$id')({
   component: RouteComponent,
@@ -18,15 +20,17 @@ export const Route = createFileRoute('/sessions/$id')({
       sessionQueryOptions(id),
     )
 
-    // Check if session is draft and user is not organizer
-    if (session.status === 'draft') {
+    // Check if session is draft or poll_closed and user is not organizer
+    if (session.status === 'draft' || session.status === 'poll_closed') {
       const isOrganizer = authData?.role === 'organizer'
       if (!isOrganizer) {
         throw redirect({
           to: '/',
           search: {
             error: 'unauthorized',
-            message: 'Draft sessions are only accessible to organizers',
+            message: session.status === 'draft'
+              ? 'Draft sessions are only accessible to organizers'
+              : 'This session is being prepared by the organizer',
           },
         })
       }
@@ -80,11 +84,13 @@ function RouteComponent() {
   const { id } = Route.useParams()
   const { data: session } = useSuspenseQuery(sessionQueryOptions(id))
   const { data: matches } = useSuspenseQuery(matchQueryOptions(id))
+  const isOrganizer = useIsOrganizer()
 
   // Determine which view to show based on session status
   const showMatchesView = ['open', 'closed', 'cancelled'].includes(
     session.status || '',
   )
+  const showPollClosedView = session.status === 'poll_closed' && isOrganizer
 
   return (
     <>
@@ -125,9 +131,11 @@ function RouteComponent() {
                 )}
               </div>
               <FieldDescription className="text-muted-foreground text-sm">
-                {showMatchesView
-                  ? 'View your games and others, and see which games you can join.'
-                  : 'Vote for which slots you want to play, each vote count as a option.'}
+                {showPollClosedView
+                  ? 'Review matches and assign bookers before opening the session.'
+                  : showMatchesView
+                    ? 'View your games and others, and see which games you can join.'
+                    : 'Vote for which slots you want to play, each vote count as a option.'}
               </FieldDescription>
               {session.votingClosesAt && (
                 <p className="text-sm flex items-center gap-1">
@@ -138,7 +146,9 @@ function RouteComponent() {
               )}
             </FieldLegend>
           </div>
-          {showMatchesView ? (
+          {showPollClosedView ? (
+            <PollClosedView session={session} matches={matches} />
+          ) : showMatchesView ? (
             <MatchesView session={session} matches={matches} />
           ) : (
             <VotingView session={session} />

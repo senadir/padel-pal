@@ -249,7 +249,6 @@ export const sessionsQueryOptions = () =>
     queryFn: () => fetchSessions(),
   })
 
-// Fetch user's participation data (votes and match memberships) per session
 export const fetchUserParticipation = createServerFn({ method: 'GET' })
   .inputValidator((playerId: string) => playerId)
   .handler(
@@ -272,7 +271,9 @@ export const fetchUserParticipation = createServerFn({ method: 'GET' })
         const { data: participationsData, error: participationsError } =
           await supabase
             .from('match_participants')
-            .select('match_id, matches!match_participants_match_id_fkey(session_id, sessions!inner(public_id))')
+            .select(
+              'match_id, matches!match_participants_match_id_fkey(session_id, sessions!inner(public_id))',
+            )
             .eq('player_id', playerId)
 
         if (participationsError) {
@@ -471,7 +472,7 @@ export const fetchMatches = createServerFn({ method: 'GET' })
           return []
         }
 
-        // Fetch all matches for this session with participants and Playtomic data
+        // Fetch all matches for this session with participants, booker, and Playtomic data
         // Use explicit FK reference to avoid ambiguity with booker_id relationship
         const { data: matchesData, error: matchesError } = await supabase
           .from('matches')
@@ -479,8 +480,16 @@ export const fetchMatches = createServerFn({ method: 'GET' })
             `
           *,
           match_participants!match_participants_match_id_fkey (
-            *,
+            id,
+            player_id,
+            joined_at,
+            source,
             players (*)
+          ),
+          booker:match_participants!matches_booker_id_fkey (
+            id,
+            player_id,
+            players (id, name, phone, avatar)
           ),
           playtomic_matches (*)
         `,
@@ -503,9 +512,31 @@ export const fetchMatches = createServerFn({ method: 'GET' })
           const participants = match.match_participants
           const players = participants.map((p) => ({
             ...p.players,
+            participantId: p.id,
             votedAt: new Date(p.joined_at), // Use joined_at as votedAt timestamp
             status: 'draft' as const, // Default status for now
           }))
+
+          // Extract booker information
+          const bookerData = match.booker as {
+            id: number
+            player_id: string
+            players: {
+              id: string
+              name: string | null
+              phone: string | null
+              avatar: string | null
+            } | null
+          } | null
+          const booker = bookerData?.players
+            ? {
+                participantId: bookerData.id,
+                playerId: bookerData.player_id,
+                name: bookerData.players.name,
+                phone: bookerData.players.phone,
+                avatar: bookerData.players.avatar,
+              }
+            : null
 
           // Transform Playtomic match data if it exists
           const playtomicMatch = match.playtomic_matches
@@ -548,6 +579,7 @@ export const fetchMatches = createServerFn({ method: 'GET' })
               | 'advanced',
             players,
             playtomicMatch,
+            booker,
             status: 'draft' as const, // Default status
           }
         })
@@ -830,6 +862,79 @@ export const unjoinMatch = createServerFn({ method: 'POST' })
     }),
   )
 
+// Update booker for a match (organizer only)
+export const updateMatchBooker = createServerFn({ method: 'POST' })
+  .inputValidator(
+    zodValidator(
+      z.object({
+        matchPublicId: z.string(),
+        participantId: z.number(),
+      }),
+    ),
+  )
+  .handler(
+    withSentry(async ({ data }) => {
+      const supabase = getSupabaseServerClient()
+
+      // Get current user and verify organizer role
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+
+      if (!user) {
+        throw new Error('User not authenticated')
+      }
+
+      // Check if user is organizer
+      const { data: userRoles } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', user.id)
+        .eq('role', 'organizer')
+        .single()
+
+      if (!userRoles) {
+        throw new Error('Only organizers can update match bookers')
+      }
+
+      // Get match ID from public_id
+      const { data: matchRow, error: matchError } = await supabase
+        .from('matches')
+        .select('id')
+        .eq('public_id', data.matchPublicId)
+        .single()
+
+      if (matchError || !matchRow) {
+        throw new Error('Match not found')
+      }
+
+      // Verify participant exists and belongs to this match
+      const { data: participant, error: participantError } = await supabase
+        .from('match_participants')
+        .select('id')
+        .eq('id', data.participantId)
+        .eq('match_id', matchRow.id)
+        .single()
+
+      if (participantError || !participant) {
+        throw new Error('Participant not found in this match')
+      }
+
+      // Update the booker_id
+      // Note: WhatsApp notification is handled by database trigger
+      const { error: updateError } = await supabase
+        .from('matches')
+        .update({ booker_id: data.participantId })
+        .eq('id', matchRow.id)
+
+      if (updateError) {
+        throw new Error(`Failed to update booker: ${updateError.message}`)
+      }
+
+      return { success: true }
+    }),
+  )
+
 // Block/unblock a player (organizer only)
 export const toggleBlockPlayer = createServerFn({ method: 'POST' })
   .inputValidator(
@@ -851,7 +956,9 @@ export const toggleBlockPlayer = createServerFn({ method: 'POST' })
 
       if (error) {
         console.error('Error toggling block status:', error)
-        throw new Error(`Failed to ${data.isBlocked ? 'block' : 'unblock'} player`)
+        throw new Error(
+          `Failed to ${data.isBlocked ? 'block' : 'unblock'} player`,
+        )
       }
 
       return { success: true }
@@ -1245,7 +1352,6 @@ export const useVoteForSession = ({
   const queryClient = useQueryClient()
 
   const { mutate: voteForSession } = useMutation({
-    mutationKey: ['vote', sessionId],
     mutationFn: async ({
       timeSlot,
       level,
@@ -1420,14 +1526,11 @@ export const useVoteForSession = ({
         toast.success(`You voted for the ${timeSlotStart} ${levelStr} slot`)
       }
     },
-    // Only invalidate when this is the last mutation for this key
-    // This prevents race conditions when rapidly clicking by batching invalidation
+    // Always refetch after error or success to sync with server
     onSettled: () => {
-      if (
-        queryClient.isMutating({ mutationKey: ['vote', sessionId] }) === 1
-      ) {
+      // Only invalidate when this is the last mutation in flight
+      if (queryClient.isMutating({ mutationKey: ['vote', sessionId] }) === 1) {
         queryClient.invalidateQueries({ queryKey: ['sessions', sessionId] })
-        // Invalidate user participation to update badges on home page
         queryClient.invalidateQueries({
           queryKey: ['sessions', 'participation', currentUserId],
         })
@@ -1466,7 +1569,7 @@ export const useMatchActions = ({
       })
     },
     onSuccess: (_data, matchPublicId) => {
-      // Get match data from query cache
+      // Get match data from query cache (using same key as matchQueryOptions)
       const matches = queryClient.getQueryData<Array<Match>>([
         'sessions',
         sessionId,
@@ -1486,10 +1589,6 @@ export const useMatchActions = ({
       // Refetch matches to get updated data
       queryClient.invalidateQueries({
         queryKey: ['sessions', sessionId, 'matches'],
-      })
-      // Invalidate user participation to update badges on home page
-      queryClient.invalidateQueries({
-        queryKey: ['sessions', 'participation', currentUserId],
       })
     },
   })
@@ -1512,7 +1611,7 @@ export const useMatchActions = ({
       })
     },
     onSuccess: (_data, matchPublicId) => {
-      // Get match data from query cache
+      // Get match data from query cache (using same key as matchQueryOptions)
       const matches = queryClient.getQueryData<Array<Match>>([
         'sessions',
         sessionId,
@@ -1532,10 +1631,6 @@ export const useMatchActions = ({
       // Refetch matches to get updated data
       queryClient.invalidateQueries({
         queryKey: ['sessions', sessionId, 'matches'],
-      })
-      // Invalidate user participation to update badges on home page
-      queryClient.invalidateQueries({
-        queryKey: ['sessions', 'participation', currentUserId],
       })
     },
   })
@@ -1604,7 +1699,14 @@ export const createSession = createServerFn({ method: 'POST' })
     zodValidator(
       createSessionValidator.extend({
         status: z
-          .enum(['draft', 'voting', 'open', 'cancelled', 'closed'])
+          .enum([
+            'draft',
+            'voting',
+            'poll_closed',
+            'open',
+            'cancelled',
+            'closed',
+          ])
           .default('voting'),
       }),
     ),
@@ -1615,7 +1717,13 @@ export const createSession = createServerFn({ method: 'POST' })
         data,
       }: {
         data: SessionForm & {
-          status?: 'draft' | 'voting' | 'open' | 'cancelled' | 'closed'
+          status?:
+            | 'draft'
+            | 'voting'
+            | 'poll_closed'
+            | 'open'
+            | 'cancelled'
+            | 'closed'
         }
       }): Promise<string> => {
         try {
@@ -1806,7 +1914,14 @@ export const updateSessionStatus = createServerFn({ method: 'POST' })
     zodValidator(
       z.object({
         sessionPublicId: z.string(),
-        status: z.enum(['draft', 'voting', 'open', 'cancelled', 'closed']),
+        status: z.enum([
+          'draft',
+          'voting',
+          'poll_closed',
+          'open',
+          'cancelled',
+          'closed',
+        ]),
       }),
     ),
   )
@@ -1840,8 +1955,8 @@ export const updateSessionStatus = createServerFn({ method: 'POST' })
           )
         }
 
-        // If status changed from 'voting' to 'open', generate matches
-        if (previousStatus === 'voting' && data.status === 'open') {
+        // If status changed from 'voting' to 'poll_closed', generate matches
+        if (previousStatus === 'voting' && data.status === 'poll_closed') {
           // Check if matches already exist
           const { count: matchesCount, error: matchesCheckError } =
             await supabase
@@ -1865,6 +1980,9 @@ export const updateSessionStatus = createServerFn({ method: 'POST' })
             }
           }
         }
+
+        // Note: WhatsApp notifications are now handled by database triggers
+        // that call the /api/notify-booker webhook when status changes to 'open'
 
         return { success: true }
       } catch (error) {

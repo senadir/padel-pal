@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import {
   Ban,
+  Crown,
   EllipsisVertical,
   ExternalLink,
   PlusIcon,
@@ -17,6 +18,7 @@ import {
   removePlayerFromMatch,
   sessionQueryOptions,
   toggleBlockPlayer,
+  updateMatchBooker,
   useMatchActions,
 } from '@/utils/sessions'
 import { useAuth, useIsOrganizer } from '@/contexts/auth'
@@ -275,6 +277,7 @@ const MatchPlayerListItem = ({
 }) => {
   const [playerDialogOpen, setPlayerDialogOpen] = useState(false)
   const isCurrentUser = currentUser?.id === player.id
+  const isBooker = currentMatch.booker?.playerId === player.id
 
   return (
     <div className="flex items-center gap-3">
@@ -288,9 +291,12 @@ const MatchPlayerListItem = ({
         </AvatarFallback>
       </Avatar>
       <div className="min-w-0 flex-1">
-        <div className="truncate font-medium">
+        <div className="flex items-center gap-1 truncate font-medium">
           {player.name}
           {isCurrentUser && ' (You)'}
+          {isBooker && (
+            <Crown className="size-3 text-amber-500" aria-label="Booker" />
+          )}
         </div>
         <div className="text-muted-foreground text-xs">
           {player.level} on Playtomic
@@ -314,6 +320,7 @@ const MatchPlayerListItem = ({
               sessionId={sessionId}
               isCurrentUser={isCurrentUser}
               isOrganizer={isOrganizer}
+              isBooker={currentMatch.booker?.playerId === player.id}
               onLeaveMatch={onLeaveMatch}
               isLoading={isLoading}
               onClose={() => setPlayerDialogOpen(false)}
@@ -331,6 +338,7 @@ const MatchPlayerOptionDialog = ({
   sessionId,
   isCurrentUser,
   isOrganizer,
+  isBooker,
   onLeaveMatch,
   isLoading,
   onClose,
@@ -340,11 +348,36 @@ const MatchPlayerOptionDialog = ({
   sessionId: string
   isCurrentUser: boolean
   isOrganizer: boolean
+  isBooker: boolean
   onLeaveMatch: () => void
   isLoading: boolean
   onClose: () => void
 }) => {
   const queryClient = useQueryClient()
+
+  // Make booker mutation (organizer only)
+  const makeBookerMutation = useMutation({
+    mutationFn: () => {
+      if (!player.participantId) {
+        throw new Error('Player does not have a participant ID')
+      }
+      return updateMatchBooker({
+        data: { matchPublicId: matchId, participantId: player.participantId },
+      })
+    },
+    onSuccess: () => {
+      toast.success(`${player.name} is now the booker`)
+      queryClient.invalidateQueries({
+        queryKey: ['sessions', sessionId, 'matches'],
+      })
+      onClose()
+    },
+    onError: (error) => {
+      toast.error(
+        error instanceof Error ? error.message : 'Failed to assign booker',
+      )
+    },
+  })
 
   // Remove player from match mutation (organizer only)
   const removePlayerMutation = useMutation({
@@ -391,7 +424,10 @@ const MatchPlayerOptionDialog = ({
   }
 
   const isActionPending =
-    isLoading || removePlayerMutation.isPending || blockPlayerMutation.isPending
+    isLoading ||
+    removePlayerMutation.isPending ||
+    blockPlayerMutation.isPending ||
+    makeBookerMutation.isPending
 
   return (
     <DropdownMenuContent className="w-56" align="end">
@@ -432,25 +468,39 @@ const MatchPlayerOptionDialog = ({
       )}
 
       {/* Organizer-only options */}
-      {isOrganizer && !isCurrentUser && (
+      {isOrganizer && (
         <>
           <DropdownMenuSeparator />
-          <DropdownMenuItem
-            onClick={() => removePlayerMutation.mutate()}
-            disabled={isActionPending}
-            className="text-destructive focus:text-destructive"
-          >
-            <UserMinus className="mr-2 h-4 w-4" />
-            Remove from match
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            onClick={() => blockPlayerMutation.mutate()}
-            disabled={isActionPending}
-            className="text-destructive focus:text-destructive"
-          >
-            <Ban className="mr-2 h-4 w-4" />
-            Block player
-          </DropdownMenuItem>
+          {/* Make booker option - only show if player has participantId and is not already booker */}
+          {player.participantId != null && !isBooker && (
+            <DropdownMenuItem
+              onClick={() => makeBookerMutation.mutate()}
+              disabled={isActionPending}
+            >
+              <Crown className="mr-2 h-4 w-4" />
+              Make booker
+            </DropdownMenuItem>
+          )}
+          {!isCurrentUser && (
+            <>
+              <DropdownMenuItem
+                onClick={() => removePlayerMutation.mutate()}
+                disabled={isActionPending}
+                className="text-destructive focus:text-destructive"
+              >
+                <UserMinus className="mr-2 h-4 w-4" />
+                Remove from match
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => blockPlayerMutation.mutate()}
+                disabled={isActionPending}
+                className="text-destructive focus:text-destructive"
+              >
+                <Ban className="mr-2 h-4 w-4" />
+                Block player
+              </DropdownMenuItem>
+            </>
+          )}
         </>
       )}
     </DropdownMenuContent>

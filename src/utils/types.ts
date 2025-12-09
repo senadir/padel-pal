@@ -51,13 +51,23 @@ export type MatchPlayer = Player & {
   playtomicPaymentStatus?: 'paid' | 'pending'
 }
 
+// Booker information for a match
+export interface MatchBooker {
+  participantId: number
+  playerId: string
+  name: string | null
+  phone: string | null
+  avatar: string | null
+}
+
 export interface Match extends Option {
   sessionId: string
   playtomicMatch: PlaytomicMatchData | null
   status: 'played' | 'scheduled' | 'draft' | 'cancelled'
   players: Array<
-    Option['players'][number] & { status?: 'paid' | 'pending' | 'draft' }
+    Option['players'][number] & { status?: 'paid' | 'pending' | 'draft'; participantId?: number }
   >
+  booker: MatchBooker | null
 }
 
 export type SessionVenue = {
