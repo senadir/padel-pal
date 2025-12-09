@@ -93,8 +93,8 @@ export async function sendBookerNotification(
       from: fromNumber,
       contentSid: BOOKER_NOTIFICATION_TEMPLATE_SID,
       contentVariables: JSON.stringify({
-        1: params.venueName,
-        2: params.matchTime,
+        venue_name: params.venueName,
+        match_time: params.matchTime,
       }),
     })
 
